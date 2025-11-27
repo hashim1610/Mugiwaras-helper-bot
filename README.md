@@ -8,7 +8,6 @@ The funky Discord bot that turns boring clan logs into juicy, beautiful summarie
       |_|  |_|\___/ \__,_|\___/_/   \_\| .__/ \__,_|_| |_| |_|
                                         |_|                   
 
-
 🌐 Automatically extracts & summarizes:
 
 🦌 Animal Donations
