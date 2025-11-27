@@ -524,4 +524,15 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
     await ctx.send(f"```text\n{preview}\n```")
 
     donations, supplies, ledger = parse_log(raw_log)
-    await ctx.
+    await ctx.send(
+        f"Parser results:\n"
+        f"Donations: {len(donations)}\n"
+        f"Supplies: {len(supplies)}\n"
+        f"Ledger entries: {len(ledger)}"
+    )
+
+    tables = build_markdown_output(donations, supplies, ledger)
+    await send_pretty(ctx, tables)
+
+
+bot.run(TOKEN)
