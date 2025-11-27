@@ -19,7 +19,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 
 # --------------------------------------------------------------------
-# PARSING HELPERS
+# SMALL HELPERS
 # --------------------------------------------------------------------
 
 def strip_code_block(text: str) -> str:
@@ -37,124 +37,116 @@ def normalize_number(num_str: str) -> float:
     return float(num_str)
 
 
-def find_discord_name(lines, start_index):
+def extract_name_from_discord_line(discord_line: str) -> str:
     """
-    Extracts user name with @tag retained.
-    Handles:
-    - Discord: @Name 1234          -> @Name
-    - Discord: @Name               -> @Name
-    - Discord: <@1234>             -> @VisibleName (next line)
-    - Discord: <@!1234>            -> @VisibleName (next line)
-    - Fallback:                    -> @ID-1234
+    Turn a 'Discord:' content into a nice @tag-like name.
+    Examples:
+    - '@Gamer_anz 1119993751092334622' -> '@Gamer_anz'
+    - '@Freddy Fenix [Manager] 123456' -> '@Freddy Fenix [Manager]'
+    - '<@1119993751092334622>'         -> '<@1119993751092334622>'
+    - 'Gamer_Anz'                      -> '@Gamer_Anz'
     """
-    for i in range(start_index, len(lines)):
-        line = lines[i].strip()
-        if not line.startswith("Discord:"):
-            continue
+    line = discord_line.strip()
 
-        # Case 1: Discord: @Name 123456
-        m = re.search(r"Discord:\s*@(.+?)\s+\d+\s*$", line)
-        if m:
-            name = m.group(1).strip()
-            return f"@{name}"
+    # If it starts with a raw mention (<@...>), just keep it
+    if line.startswith("<@"):
+        return line
 
-        # Case 2: Discord: @Name
-        m2 = re.search(r"Discord:\s*@(.+)", line)
-        if m2:
-            name = m2.group(1).strip()
-            return f"@{name}"
+    # If it starts with @, we probably have "@Name [roles] 1234567890"
+    if line.startswith("@"):
+        parts = line.split()
+        if len(parts) > 1 and parts[-1].isdigit():
+            # Drop the numeric ID at the end
+            return " ".join(parts[:-1])
+        return line
 
-        # Case 3: Mention only: <@1234> or <@!1234>
-        m3 = re.search(r"Discord:\s*<@!?(\d+)>", line)
-        if m3:
-            # Try next non-empty line as visible name
-            j = i + 1
-            while j < len(lines) and not lines[j].strip():
-                j += 1
-            if j < len(lines):
-                visible = lines[j].strip()
-                return f"@{visible}"
-            # Fallback: use ID-based label
-            return f"@ID-{m3.group(1)}"
+    # Otherwise, just take the first "word" as the name and ensure @
+    parts = line.split()
+    if not parts:
+        return "@Unknown"
+    base = parts[0]
+    if not base.startswith("@"):
+        base = "@" + base
+    return base
 
-        return None
 
-    return None
-
+# --------------------------------------------------------------------
+# PARSER (REGEX-BASED, WHOLE-TEXT)
+# --------------------------------------------------------------------
 
 def parse_log(raw_log: str):
     """
     Parse the raw clan log text and return three lists:
     donations, supplies, ledger.
-    (We do NOT track dates here; date filtering is done at message level.)
+
+    This DOES NOT care about dates; date filtering is done at message level
+    when we build raw_log from the channel.
     """
-    lines = raw_log.splitlines()
+    text = raw_log
 
-    donations = []  # {name, materials (float)}
-    supplies = []   # {name, amount (float)}
-    ledger = []     # {name, transition, amount (float)}
+    donations = []  # {name, materials}
+    supplies = []   # {name, amount}
+    ledger = []     # {name, transition, amount}
 
-    for i, line in enumerate(lines):
-        stripped = line.strip()
+    # ---------------- Donations ----------------
+    # Pattern: "Donated ... Materials added: X ...\nDiscord: <something>"
+    donation_pattern = re.compile(
+        r"Donated.*?Materials\s*added[^\d]*([0-9]+(?:[.,][0-9]+)?)"
+        r".*?\nDiscord:\s*(.+)",
+        flags=re.IGNORECASE | re.DOTALL
+    )
 
-        # ----- Donations -----
-        if "Donated" in stripped and "Materials" in stripped and "added" in stripped:
-            # Very tolerant: "Materials added: 3.5", "Materials  added : 3,5", etc.
-            m = re.search(
-                r"Materials\s*added[^\d]*([0-9]+(?:[.,][0-9]+)?)",
-                stripped,
-                flags=re.IGNORECASE,
-            )
-            if not m:
-                continue
-            materials = normalize_number(m.group(1))
-            name = find_discord_name(lines, i + 1)
-            if not name:
-                continue
-            donations.append({
-                "name": name,
-                "materials": materials,
-            })
-            continue
+    for m in donation_pattern.finditer(text):
+        amount_str = m.group(1)
+        discord_part = m.group(2).splitlines()[0]  # only first line after Discord:
+        materials = normalize_number(amount_str)
+        name = extract_name_from_discord_line(discord_part)
+        donations.append({"name": name, "materials": materials})
 
-        # ----- Supply Missions -----
-        if "Delivered" in stripped and "Supplies" in stripped:
-            m = re.search(
-                r"Delivered\s*Supplies[^\d]*([0-9]+(?:[.,][0-9]+)?)",
-                stripped,
-                flags=re.IGNORECASE,
-            )
-            if not m:
-                continue
-            amount = normalize_number(m.group(1))
-            name = find_discord_name(lines, i + 1)
-            if not name:
-                continue
-            supplies.append({
-                "name": name,
-                "amount": amount,
-            })
-            continue
+    # ---------------- Supply Missions ----------------
+    # Pattern: "Delivered Supplies: X ...\nDiscord: <something>"
+    supply_pattern = re.compile(
+        r"Delivered\s*Supplies[^\d]*([0-9]+(?:[.,][0-9]+)?)"
+        r".*?\nDiscord:\s*(.+)",
+        flags=re.IGNORECASE | re.DOTALL
+    )
 
-        # ----- Ledger -----
-        if "Deposited to clan ledger" in stripped or "Withdrew from clan ledger" in stripped:
-            transition = "Deposit" if "Deposited" in stripped else "Withdrawal"
-            m = re.search(r"\$([0-9]+(?:[.,][0-9]+)?)", stripped)
-            if not m:
-                continue
-            amount = normalize_number(m.group(1))
-            name = find_discord_name(lines, i + 1)
-            if not name:
-                continue
-            ledger.append({
-                "name": name,
-                "transition": transition,
-                "amount": amount,
-            })
-            continue
+    for m in supply_pattern.finditer(text):
+        amount_str = m.group(1)
+        discord_part = m.group(2).splitlines()[0]
+        amount = normalize_number(amount_str)
+        name = extract_name_from_discord_line(discord_part)
+        supplies.append({"name": name, "amount": amount})
+
+    # ---------------- Ledger ----------------
+    # Pattern:
+    #   "Deposited to clan ledger, $X ...\nDiscord: <something>"
+    #   "Withdrew from clan ledger, $X ...\nDiscord: <something>"
+    ledger_pattern = re.compile(
+        r"(Deposited to clan ledger|Withdrew from clan ledger).*?\$([0-9]+(?:[.,][0-9]+)?)"
+        r".*?\nDiscord:\s*(.+)",
+        flags=re.IGNORECASE | re.DOTALL
+    )
+
+    for m in ledger_pattern.finditer(text):
+        action = m.group(1).lower()
+        if "deposited" in action:
+            transition = "Deposit"
+        else:
+            transition = "Withdrawal"
+
+        amount_str = m.group(2)
+        discord_part = m.group(3).splitlines()[0]
+        amount = normalize_number(amount_str)
+        name = extract_name_from_discord_line(discord_part)
+        ledger.append({"name": name, "transition": transition, "amount": amount})
 
     return donations, supplies, ledger
 
+
+# --------------------------------------------------------------------
+# TABLE BUILDING
+# --------------------------------------------------------------------
 
 def build_markdown_output(donations, supplies, ledger):
     """
@@ -385,9 +377,7 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
     preview = raw_log[:800] or "(no text)"
     await ctx.send(f"Preview:\n```{preview}```")
 
-    cleaned = strip_code_block(raw_log)
-    donations, supplies, ledger = parse_log(cleaned)
-
+    donations, supplies, ledger = parse_log(raw_log)
     await ctx.send(
         f"Parser results:\n"
         f"Donations: {len(donations)}\n"
