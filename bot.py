@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, date, timedelta
 
 import discord
@@ -13,6 +14,7 @@ LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))  # set in Railway
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True  # needed to resolve IDs -> display names
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -44,8 +46,6 @@ def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
     3) Otherwise fall back to a text '@Name'
     4) If the 'name' is just a long row of dashes/underscores, ignore it
     """
-    import re
-
     s = discord_part.strip()
     if not s:
         return None
@@ -166,6 +166,27 @@ def extract_number_after_char(text: str, ch_marker: str) -> float | None:
         return None
 
 
+def display_name_from_mention(name: str, id_to_name: dict | None) -> str:
+    """
+    If 'name' is a pure Discord mention like '<@1234>' or '<@!1234>',
+    and we know that ID in id_to_name, return '@DisplayName'.
+    Otherwise, return the original name.
+    """
+    if not id_to_name:
+        return name
+
+    m = re.fullmatch(r"<@!?(\d+)>", name.strip())
+    if not m:
+        return name
+
+    user_id = m.group(1)
+    disp = id_to_name.get(user_id)
+    if not disp:
+        return name
+
+    return "@" + disp
+
+
 # --------------------------------------------------------------------
 # PARSER (LINE-BY-LINE, SIMPLE)
 # --------------------------------------------------------------------
@@ -282,7 +303,7 @@ def make_table(headers, rows, align_right=None) -> str:
     return "\n".join(lines)
 
 
-def build_markdown_output(donations, supplies, ledger):
+def build_markdown_output(donations, supplies, ledger, id_to_name=None):
     """
     Build the final string with exactly 4 sections
     (titles + pretty tables), no extra commentary.
@@ -312,7 +333,11 @@ def build_markdown_output(donations, supplies, ledger):
     # 1) Donations Breakdown Table Summary
     sections.append("**Donations Breakdown Table Summary**")
     donation_rows = [
-        [name, stats["count"], f"{stats['total']:.2f}"]
+        [
+            display_name_from_mention(name, id_to_name),
+            stats["count"],
+            f"{stats['total']:.2f}",
+        ]
         for name, stats in sorted_donations
     ]
     donations_table = make_table(
@@ -333,7 +358,10 @@ def build_markdown_output(donations, supplies, ledger):
 
     # 3) Supply Mission Summary
     sections.append("**Supply Mission Summary**")
-    supply_rows = [[s["name"], f"{s['amount']:.2f}"] for s in supplies]
+    supply_rows = [
+        [display_name_from_mention(s["name"], id_to_name), f"{s['amount']:.2f}"]
+        for s in supplies
+    ]
     supply_table = make_table(
         headers=["Name", "Supplies Delivered"],
         rows=supply_rows,
@@ -344,7 +372,11 @@ def build_markdown_output(donations, supplies, ledger):
     # 4) Ledger Transactions
     sections.append("**Ledger Transactions**")
     ledger_rows = [
-        [l["name"], l["transition"], f"{l['amount']:.2f}"]
+        [
+            display_name_from_mention(l["name"], id_to_name),
+            l["transition"],
+            f"{l['amount']:.2f}",
+        ]
         for l in ledger
     ]
     ledger_table = make_table(
@@ -358,10 +390,10 @@ def build_markdown_output(donations, supplies, ledger):
     return "\n\n".join(sections)
 
 
-def summarize_log(raw_log: str) -> str:
+def summarize_log(raw_log: str, id_to_name: dict | None = None) -> str:
     raw_log = strip_code_block(raw_log)
     donations, supplies, ledger = parse_log(raw_log)
-    return build_markdown_output(donations, supplies, ledger)
+    return build_markdown_output(donations, supplies, ledger, id_to_name=id_to_name)
 
 
 # --------------------------------------------------------------------
@@ -443,7 +475,6 @@ def chunk_text(text: str, limit: int = 1800):
     """
     chunk = ""
     for line in text.splitlines():
-        # +1 for the newline we add
         if len(chunk) + len(line) + 1 > limit:
             yield chunk
             chunk = ""
@@ -467,7 +498,12 @@ async def logsummary_all(ctx):
     Reads (up to limit) all messages from the log channel and summarizes them.
     """
     raw_log = await build_raw_log_from_channel(start_date=None, end_date=None)
-    output = summarize_log(raw_log)
+
+    id_to_name = {}
+    if ctx.guild:
+        id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+
+    output = summarize_log(raw_log, id_to_name=id_to_name)
     await send_pretty(ctx, output)
 
 
@@ -481,7 +517,12 @@ async def logsummary_last7(ctx):
     start = today - timedelta(days=7)
 
     raw_log = await build_raw_log_from_channel(start_date=start, end_date=today)
-    output = summarize_log(raw_log)
+
+    id_to_name = {}
+    if ctx.guild:
+        id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+
+    output = summarize_log(raw_log, id_to_name=id_to_name)
     await send_pretty(ctx, output)
 
 
@@ -499,7 +540,12 @@ async def logsummary_range(ctx, start_str: str, end_str: str):
         return
 
     raw_log = await build_raw_log_from_channel(start_date=start, end_date=end)
-    output = summarize_log(raw_log)
+
+    id_to_name = {}
+    if ctx.guild:
+        id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+
+    output = summarize_log(raw_log, id_to_name=id_to_name)
     await send_pretty(ctx, output)
 
 
@@ -531,8 +577,15 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
         f"Ledger entries: {len(ledger)}"
     )
 
-    tables = build_markdown_output(donations, supplies, ledger)
+    id_to_name = {}
+    if ctx.guild:
+        id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+
+    tables = build_markdown_output(donations, supplies, ledger, id_to_name=id_to_name)
     await send_pretty(ctx, tables)
 
 
+# ---------------------------------------------------------------
+# Start bot
+# ---------------------------------------------------------------
 bot.run(TOKEN)
