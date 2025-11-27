@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 
 import discord
 from discord.ext import commands
-from discord import app_commands  # NEW: for slash commands
+from discord import app_commands  # for slash commands
 
 # --------------------------------------------------------------------
 # CONFIG
@@ -304,7 +304,7 @@ def build_markdown_output(donations, supplies, ledger, id_to_name=None):
     for l in ledger:
         base_name = display_name_from_mention(l["name"], id_to_name)
         transition = "⬆️ Deposit" if l["transition"] == "Deposit" else "⬇️ Withdrawal"
-        # UPDATED: added "$" to the amount column
+        # Dollar symbol added here
         ledger_rows.append(
             [base_name, transition, f"${l['amount']:.2f}"]
         )
@@ -398,15 +398,14 @@ def chunk_text(text: str, limit=1800):
 
 
 async def send_pretty(ctx, text: str):
-    """Existing helper for prefix (!) commands – unchanged."""
+    """Existing helper for prefix (!) commands."""
     for part in chunk_text(text):
         await ctx.send(f"```md\n{part.strip()}\n```")
 
 
 async def send_pretty_interaction(interaction: discord.Interaction, text: str):
     """
-    NEW: Same as send_pretty, but for slash commands.
-    First chunk uses interaction.response, rest use followup.
+    Same idea as send_pretty, but for slash commands.
     """
     chunks = list(chunk_text(text))
     if not chunks:
@@ -422,16 +421,18 @@ async def send_pretty_interaction(interaction: discord.Interaction, text: str):
 
 
 # --------------------------------------------------------------------
-# COMMANDS
+# EVENTS
 # --------------------------------------------------------------------
 
 @bot.event
 async def on_ready():
     print(f"✔ Logged in as {bot.user} (ID {bot.user.id})")
-    # NEW: sync slash commands
+
+    # Per-guild sync so slash commands appear quickly in all servers
     try:
-        synced = await bot.tree.sync()
-        print(f"✔ Synced {len(synced)} slash commands")
+        for guild in bot.guilds:
+            synced = await bot.tree.sync(guild=guild)
+            print(f"✔ Synced {len(synced)} commands to guild {guild.name} ({guild.id})")
     except Exception as e:
         print(f"❌ Failed to sync slash commands: {e}")
 
@@ -565,7 +566,7 @@ async def logdebug_range_slash(
 
     raw = await build_raw_log_from_channel(start, end)
 
-    # First message: basic stats
+    # First message: basic stats + preview
     msg = f"Fetched {len(raw)} chars"
     preview = raw[:800] or "(no text)"
     msg_preview = f"{msg}\n```text\n{preview}\n```"
