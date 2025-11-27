@@ -239,16 +239,53 @@ def parse_log(raw_log: str):
 
 
 # --------------------------------------------------------------------
-# TABLE BUILDING
+# TABLE BUILDING (PRETTIER)
 # --------------------------------------------------------------------
+
+def make_table(headers, rows, align_right=None) -> str:
+    """
+    Build a padded table with | pipes, with optional right-aligned columns.
+    Returns a multi-line string (no code fences).
+    """
+    if align_right is None:
+        align_right = set()
+
+    # Compute column widths
+    cols = len(headers)
+    widths = [len(str(h)) for h in headers]
+    for row in rows:
+        for i in range(cols):
+            cell = "" if i >= len(row) else str(row[i])
+            widths[i] = max(widths[i], len(cell))
+
+    def fmt_row(row):
+        cells = []
+        for i in range(cols):
+            cell = "" if i >= len(row) else str(row[i])
+            if i in align_right:
+                cells.append(cell.rjust(widths[i]))
+            else:
+                cells.append(cell.ljust(widths[i]))
+        return "| " + " | ".join(cells) + " |"
+
+    # Header + separator
+    sep_cells = []
+    for i, w in enumerate(widths):
+        sep_cells.append("-" * w)
+    header_line = fmt_row(headers)
+    sep_line = "| " + " | ".join(sep_cells) + " |"
+
+    lines = [header_line, sep_line]
+    for row in rows:
+        lines.append(fmt_row(row))
+
+    return "\n".join(lines)
+
 
 def build_markdown_output(donations, supplies, ledger):
     """
-    Build the final markdown string with exactly 4 tables in order:
-    Donations Breakdown Table Summary
-    Overall Totals
-    Supply Mission Summary
-    Ledger Transactions
+    Build the final string with exactly 4 sections
+    (titles + pretty tables), no extra commentary.
     """
 
     # ----- Donations summary -----
@@ -270,46 +307,55 @@ def build_markdown_output(donations, supplies, ledger):
     total_donation_count = sum(v["count"] for v in donation_by_name.values())
     total_materials_sum = sum(v["total"] for v in donation_by_name.values())
 
-    lines = []
+    sections = []
 
     # 1) Donations Breakdown Table Summary
-    lines.append("**Donations Breakdown Table Summary**")
-    lines.append("| Name | Donations | Total Materials Value |")
-    lines.append("| --- | ---: | ---: |")
-    for name, stats in sorted_donations:
-        lines.append(
-            f"| {name} | {stats['count']} | {stats['total']:.2f} |"
-        )
-    lines.append("")  # blank line after table
+    sections.append("**Donations Breakdown Table Summary**")
+    donation_rows = [
+        [name, stats["count"], f"{stats['total']:.2f}"]
+        for name, stats in sorted_donations
+    ]
+    donations_table = make_table(
+        headers=["Name", "Donations", "Total Materials Value"],
+        rows=donation_rows,
+        align_right={1, 2},
+    )
+    sections.append(donations_table)
 
     # 2) Overall Totals
-    lines.append("**Overall Totals**")
-    lines.append("| Total Donations | Total Materials Value |")
-    lines.append("| ---: | ---: |")
-    lines.append(f"| {total_donation_count} | {total_materials_sum:.2f} |")
-    lines.append("")
+    sections.append("**Overall Totals**")
+    overall_table = make_table(
+        headers=["Total Donations", "Total Materials Value"],
+        rows=[[total_donation_count, f"{total_materials_sum:.2f}"]],
+        align_right={0, 1},
+    )
+    sections.append(overall_table)
 
     # 3) Supply Mission Summary
-    lines.append("**Supply Mission Summary**")
-    lines.append("| Name | Supplies Delivered |")
-    lines.append("| --- | ---: |")
-    for s in supplies:
-        lines.append(
-            f"| {s['name']} | {s['amount']:.2f} |"
-        )
-    lines.append("")
+    sections.append("**Supply Mission Summary**")
+    supply_rows = [[s["name"], f"{s['amount']:.2f}"] for s in supplies]
+    supply_table = make_table(
+        headers=["Name", "Supplies Delivered"],
+        rows=supply_rows,
+        align_right={1},
+    )
+    sections.append(supply_table)
 
     # 4) Ledger Transactions
-    lines.append("**Ledger Transactions**")
-    lines.append("| Name | Transition | Amount |")
-    lines.append("| --- | --- | ---: |")
-    for l in ledger:
-        lines.append(
-            f"| {l['name']} | {l['transition']} | {l['amount']:.2f} |"
-        )
+    sections.append("**Ledger Transactions**")
+    ledger_rows = [
+        [l["name"], l["transition"], f"{l['amount']:.2f}"]
+        for l in ledger
+    ]
+    ledger_table = make_table(
+        headers=["Name", "Transition", "Amount"],
+        rows=ledger_rows,
+        align_right={2},
+    )
+    sections.append(ledger_table)
 
-    # IMPORTANT: no extra commentary or text
-    return "\n".join(lines)
+    # Join all sections, separated by blank lines
+    return "\n\n".join(sections)
 
 
 def summarize_log(raw_log: str) -> str:
@@ -390,16 +436,28 @@ async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
 
-def chunk_text(text: str, limit: int = 1900):
-    """Yield <=limit-char chunks split on line boundaries."""
+def chunk_text(text: str, limit: int = 1800):
+    """
+    Yield <=limit-char chunks split on line boundaries.
+    (We keep a bit under 2000 to allow code fences.)
+    """
     chunk = ""
     for line in text.splitlines():
+        # +1 for the newline we add
         if len(chunk) + len(line) + 1 > limit:
             yield chunk
             chunk = ""
         chunk += line + "\n"
     if chunk:
         yield chunk
+
+
+async def send_pretty(ctx, text: str):
+    """
+    Send the text in one or more ```md code blocks for nicer formatting.
+    """
+    for part in chunk_text(text):
+        await ctx.send(f"```md\n{part.strip()}\n```")
 
 
 @bot.command(name="logsummary_all")
@@ -410,9 +468,7 @@ async def logsummary_all(ctx):
     """
     raw_log = await build_raw_log_from_channel(start_date=None, end_date=None)
     output = summarize_log(raw_log)
-
-    for part in chunk_text(output):
-        await ctx.send(part)
+    await send_pretty(ctx, output)
 
 
 @bot.command(name="logsummary7")
@@ -426,9 +482,7 @@ async def logsummary_last7(ctx):
 
     raw_log = await build_raw_log_from_channel(start_date=start, end_date=today)
     output = summarize_log(raw_log)
-
-    for part in chunk_text(output):
-        await ctx.send(part)
+    await send_pretty(ctx, output)
 
 
 @bot.command(name="logsummary_range")
@@ -446,9 +500,7 @@ async def logsummary_range(ctx, start_str: str, end_str: str):
 
     raw_log = await build_raw_log_from_channel(start_date=start, end_date=end)
     output = summarize_log(raw_log)
-
-    for part in chunk_text(output):
-        await ctx.send(part)
+    await send_pretty(ctx, output)
 
 
 @bot.command(name="logdebug_range")
@@ -469,19 +521,7 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
     await ctx.send(f"Fetched {len(raw_log)} characters from log channel.")
 
     preview = raw_log[:800] or "(no text)"
-    await ctx.send(f"Preview:\n```{preview}```")
+    await ctx.send(f"```text\n{preview}\n```")
 
     donations, supplies, ledger = parse_log(raw_log)
-    await ctx.send(
-        f"Parser results:\n"
-        f"Donations: {len(donations)}\n"
-        f"Supplies: {len(supplies)}\n"
-        f"Ledger entries: {len(ledger)}"
-    )
-
-    tables = build_markdown_output(donations, supplies, ledger)
-    for part in chunk_text(tables):
-        await ctx.send(part)
-
-
-bot.run(TOKEN)
+    await ctx.
