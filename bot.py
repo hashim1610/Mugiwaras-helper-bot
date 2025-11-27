@@ -424,8 +424,8 @@ async def send_sections_interaction(
     already_responded: bool = False,
 ):
     """
-    Send up to 4 logical sections for slash commands.
-    Each section may still be chunked if it's huge, but it's grouped logically.
+    Send one or more logical sections for slash commands.
+    Each section may still be chunked if it's huge.
     """
     first_send = not already_responded
 
@@ -516,6 +516,76 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
     id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
     out = build_markdown_output(donations, supplies, ledger, id_to_name)
     await send_pretty(ctx, out)
+
+
+# ------- NEW PREFIX (!) COMMANDS: SECTION-SPECIFIC (RANGE) ----------
+
+@bot.command()
+async def logdonations_range(ctx, start_str: str, end_str: str):
+    """Show only the Donations section for a date range."""
+    try:
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
+    except:
+        return await ctx.send("❌ Use format: `DD-MM-YYYY DD-MM-YYYY`")
+
+    raw = await build_raw_log_from_channel(start, end)
+    id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    donations_sec = sections[0]
+    await send_pretty(ctx, donations_sec)
+
+
+@bot.command()
+async def logtotals_range(ctx, start_str: str, end_str: str):
+    """Show only the Overall Totals section for a date range."""
+    try:
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
+    except:
+        return await ctx.send("❌ Use format: `DD-MM-YYYY DD-MM-YYYY`")
+
+    raw = await build_raw_log_from_channel(start, end)
+    id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    totals_sec = sections[1]
+    await send_pretty(ctx, totals_sec)
+
+
+@bot.command()
+async def logsupply_range(ctx, start_str: str, end_str: str):
+    """Show only the Supply Mission section for a date range."""
+    try:
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
+    except:
+        return await ctx.send("❌ Use format: `DD-MM-YYYY DD-MM-YYYY`")
+
+    raw = await build_raw_log_from_channel(start, end)
+    id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    supply_sec = sections[2]
+    await send_pretty(ctx, supply_sec)
+
+
+@bot.command()
+async def logledger_range(ctx, start_str: str, end_str: str):
+    """Show only the Ledger Transactions section for a date range."""
+    try:
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
+    except:
+        return await ctx.send("❌ Use format: `DD-MM-YYYY DD-MM-YYYY`")
+
+    raw = await build_raw_log_from_channel(start, end)
+    id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    ledger_sec = sections[3]
+    await send_pretty(ctx, ledger_sec)
 
 
 # ------------------------ SLASH (/) COMMANDS ------------------------
@@ -611,6 +681,124 @@ async def logdebug_range_slash(
 
     # Send the 4 logical report parts as followups (interaction already responded)
     await send_sections_interaction(interaction, sections, already_responded=True)
+
+
+# ---- NEW SLASH (/) COMMANDS: SECTION-SPECIFIC (RANGE) -----
+
+@bot.tree.command(name="logdonations_range", description="Show only Donations section for a date range")
+@app_commands.describe(
+    start_str="Start date (DD-MM-YYYY)",
+    end_str="End date (DD-MM-YYYY)"
+)
+async def logdonations_range_slash(
+    interaction: discord.Interaction,
+    start_str: str,
+    end_str: str
+):
+    try:
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
+    except:
+        await interaction.response.send_message(
+            "❌ Use format: `DD-MM-YYYY` for both dates.",
+            ephemeral=True
+        )
+        return
+
+    raw = await build_raw_log_from_channel(start, end)
+    guild = interaction.guild
+    id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    donations_sec = [sections[0]]
+    await send_sections_interaction(interaction, donations_sec)
+
+
+@bot.tree.command(name="logtotals_range", description="Show only Overall Totals for a date range")
+@app_commands.describe(
+    start_str="Start date (DD-MM-YYYY)",
+    end_str="End date (DD-MM-YYYY)"
+)
+async def logtotals_range_slash(
+    interaction: discord.Interaction,
+    start_str: str,
+    end_str: str
+):
+    try:
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
+    except:
+        await interaction.response.send_message(
+            "❌ Use format: `DD-MM-YYYY` for both dates.",
+            ephemeral=True
+        )
+        return
+
+    raw = await build_raw_log_from_channel(start, end)
+    guild = interaction.guild
+    id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    totals_sec = [sections[1]]
+    await send_sections_interaction(interaction, totals_sec)
+
+
+@bot.tree.command(name="logsupply_range", description="Show only Supply section for a date range")
+@app_commands.describe(
+    start_str="Start date (DD-MM-YYYY)",
+    end_str="End date (DD-MM-YYYY)"
+)
+async def logsupply_range_slash(
+    interaction: discord.Interaction,
+    start_str: str,
+    end_str: str
+):
+    try:
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
+    except:
+        await interaction.response.send_message(
+            "❌ Use format: `DD-MM-YYYY` for both dates.",
+            ephemeral=True
+        )
+        return
+
+    raw = await build_raw_log_from_channel(start, end)
+    guild = interaction.guild
+    id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    supply_sec = [sections[2]]
+    await send_sections_interaction(interaction, supply_sec)
+
+
+@bot.tree.command(name="logledger_range", description="Show only Ledger section for a date range")
+@app_commands.describe(
+    start_str="Start date (DD-MM-YYYY)",
+    end_str="End date (DD-MM-YYYY)"
+)
+async def logledger_range_slash(
+    interaction: discord.Interaction,
+    start_str: str,
+    end_str: str
+):
+    try:
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
+    except:
+        await interaction.response.send_message(
+            "❌ Use format: `DD-MM-YYYY` for both dates.",
+            ephemeral=True
+        )
+        return
+
+    raw = await build_raw_log_from_channel(start, end)
+    guild = interaction.guild
+    id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    ledger_sec = [sections[3]]
+    await send_sections_interaction(interaction, ledger_sec)
 
 
 # ---------------------------------------------------------------
