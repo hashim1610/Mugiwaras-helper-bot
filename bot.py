@@ -449,11 +449,10 @@ async def send_sections_interaction(
 async def on_ready():
     print(f"✔ Logged in as {bot.user} (ID {bot.user.id})")
 
-    # Per-guild sync so slash commands appear quickly in all servers
+    # Global sync so slash commands are registered for all guilds
     try:
-        for guild in bot.guilds:
-            synced = await bot.tree.sync(guild=guild)
-            print(f"✔ Synced {len(synced)} commands to guild {guild.name} ({guild.id})")
+        synced = await bot.tree.sync()
+        print(f"✔ Globally synced {len(synced)} slash commands")
     except Exception as e:
         print(f"❌ Failed to sync slash commands: {e}")
 
@@ -805,3 +804,4 @@ async def logledger_range_slash(
 # START BOT
 # ---------------------------------------------------------------
 bot.run(TOKEN)
+
