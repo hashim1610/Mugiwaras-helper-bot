@@ -29,37 +29,48 @@ def strip_code_block(text: str) -> str:
     return text
 
 
-def extract_iso_date(line: str):
-    """Look for YYYY-MM-DD in the line and return a date object or None."""
-    m = re.search(r"(\d{4}-\d{2}-\d{2})", line)
-    if not m:
-        return None
-    try:
-        return datetime.strptime(m.group(1), "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-
 def find_discord_name(lines, start_index):
     """
-    From start_index forward, find the first 'Discord:' line and extract name:
-    keep visible name + roles, drop '@' and numeric ID.
-
-    Example:
-    'Discord: @Freddy Fenix [Manager] 1116...' -> 'Freddy Fenix [Manager]'
+    Extracts user name with @tag retained.
+    Handles:
+    - Discord: @Name 1234          -> @Name
+    - Discord: @Name               -> @Name
+    - Discord: <@1234>             -> @VisibleName (next line)
+    - Discord: <@!1234>            -> @VisibleName (next line)
+    - Fallback:                    -> @ID-1234
     """
     for i in range(start_index, len(lines)):
         line = lines[i].strip()
-        if line.startswith("Discord:"):
-            # Try pattern with numeric ID at end
-            m = re.search(r"Discord:\s*@(.+?)\s+\d+\s*$", line)
-            if m:
-                return m.group(1)
-            # Fallback: grab everything after '@'
-            m2 = re.search(r"Discord:\s*@(.+)", line)
-            if m2:
-                return m2.group(1).strip()
-            return None
+        if not line.startswith("Discord:"):
+            continue
+
+        # Case 1: Discord: @Name 123456
+        m = re.search(r"Discord:\s*@(.+?)\s+\d+\s*$", line)
+        if m:
+            name = m.group(1).strip()
+            return f"@{name}"
+
+        # Case 2: Discord: @Name
+        m2 = re.search(r"Discord:\s*@(.+)", line)
+        if m2:
+            name = m2.group(1).strip()
+            return f"@{name}"
+
+        # Case 3: Mention only: <@1234> or <@!1234>
+        m3 = re.search(r"Discord:\s*<@!?(\d+)>", line)
+        if m3:
+            # Try next non-empty line as visible name
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j < len(lines):
+                visible = lines[j].strip()
+                return f"@{visible}"
+            # Fallback: use ID-based label
+            return f"@ID-{m3.group(1)}"
+
+        return None
+
     return None
 
 
@@ -67,26 +78,21 @@ def parse_log(raw_log: str):
     """
     Parse the raw clan log text and return three lists:
     donations, supplies, ledger.
-    Each element has 'name', numeric fields, and optional 'date'.
+    (We do NOT track dates here; date filtering is done at message level.)
     """
     lines = raw_log.splitlines()
-    current_date = None
 
-    donations = []  # {name, materials (float), date}
-    supplies = []   # {name, amount (float), date}
-    ledger = []     # {name, transition, amount (float), date}
+    donations = []  # {name, materials (float)}
+    supplies = []   # {name, amount (float)}
+    ledger = []     # {name, transition, amount (float)}
 
     for i, line in enumerate(lines):
         stripped = line.strip()
 
-        # Update current_date if we see a YYYY-MM-DD in this line
-        d = extract_iso_date(stripped)
-        if d:
-            current_date = d
-
         # ----- Donations -----
-        if "Donated" in stripped and "Materials added:" in stripped:
-            m = re.search(r"Materials added:\s*([0-9]+(?:\.[0-9]+)?)", stripped)
+        if "Donated" in stripped and "Materials added" in stripped:
+            # Be tolerant about spaces/colon
+            m = re.search(r"Materials added[:\s]*([0-9]+(?:\.[0-9]+)?)", stripped)
             if not m:
                 continue
             materials = float(m.group(1))
@@ -96,13 +102,12 @@ def parse_log(raw_log: str):
             donations.append({
                 "name": name,
                 "materials": materials,
-                "date": current_date
             })
             continue
 
         # ----- Supply Missions -----
-        if "Delivered Supplies:" in stripped:
-            m = re.search(r"Delivered Supplies:\s*([0-9]+(?:\.[0-9]+)?)", stripped)
+        if "Delivered Supplies" in stripped:
+            m = re.search(r"Delivered Supplies[:\s]*([0-9]+(?:\.[0-9]+)?)", stripped)
             if not m:
                 continue
             amount = float(m.group(1))
@@ -112,17 +117,12 @@ def parse_log(raw_log: str):
             supplies.append({
                 "name": name,
                 "amount": amount,
-                "date": current_date
             })
             continue
 
         # ----- Ledger -----
-        if "Deposited to clan ledger, $" in stripped or "Withdrew from clan ledger, $" in stripped:
-            if "Deposited to clan ledger" in stripped:
-                transition = "Deposit"
-            else:
-                transition = "Withdrawal"
-
+        if "Deposited to clan ledger" in stripped or "Withdrew from clan ledger" in stripped:
+            transition = "Deposit" if "Deposited" in stripped else "Withdrawal"
             m = re.search(r"\$([0-9]+(?:\.[0-9]+)?)", stripped)
             if not m:
                 continue
@@ -134,30 +134,10 @@ def parse_log(raw_log: str):
                 "name": name,
                 "transition": transition,
                 "amount": amount,
-                "date": current_date
             })
             continue
 
     return donations, supplies, ledger
-
-
-def filter_by_date(items, start_date, end_date):
-    """Filter list of dicts with optional 'date' field by date range."""
-    if start_date is None and end_date is None:
-        return items
-    filtered = []
-    for item in items:
-        d = item.get("date")
-        if d is None:
-            # If no explicit date in log line, keep it (change to skip if you prefer)
-            filtered.append(item)
-            continue
-        if start_date is not None and d < start_date:
-            continue
-        if end_date is not None and d > end_date:
-            continue
-        filtered.append(item)
-    return filtered
 
 
 def build_markdown_output(donations, supplies, ledger):
@@ -193,7 +173,7 @@ def build_markdown_output(donations, supplies, ledger):
     # 1) Donations Breakdown Table Summary
     lines.append("Donations Breakdown Table Summary")
     lines.append("| Name | Donations | Total Materials Value |")
-    lines.append("| --- | --- | --- |")
+    lines.append("| --- | ---: | ---: |")
     for name, stats in sorted_donations:
         lines.append(
             f"| {name} | {stats['count']} | {stats['total']:.2f} |"
@@ -203,41 +183,36 @@ def build_markdown_output(donations, supplies, ledger):
     # 2) Overall Totals
     lines.append("Overall Totals")
     lines.append("| Total Donations | Total Materials Value |")
-    lines.append("| --- | --- |")
+    lines.append("| ---: | ---: |")
     lines.append(f"| {total_donation_count} | {total_materials_sum:.2f} |")
     lines.append("")
 
     # 3) Supply Mission Summary
     lines.append("Supply Mission Summary")
     lines.append("| Name | Supplies Delivered |")
-    lines.append("| --- | --- |")
+    lines.append("| --- | ---: |")
     for s in supplies:
         lines.append(
-            f"| {s['name']} | {s['amount']} |"
+            f"| {s['name']} | {s['amount']:.2f} |"
         )
     lines.append("")
 
     # 4) Ledger Transactions
     lines.append("Ledger Transactions")
     lines.append("| Name | Transition | Amount |")
-    lines.append("| --- | --- | --- |")
+    lines.append("| --- | --- | ---: |")
     for l in ledger:
         lines.append(
-            f"| {l['name']} | {l['transition']} | {l['amount']} |"
+            f"| {l['name']} | {l['transition']} | {l['amount']:.2f} |"
         )
 
     # IMPORTANT: no extra commentary or text
     return "\n".join(lines)
 
 
-def summarize_log(raw_log: str, start_date=None, end_date=None) -> str:
+def summarize_log(raw_log: str) -> str:
     raw_log = strip_code_block(raw_log)
     donations, supplies, ledger = parse_log(raw_log)
-
-    donations = filter_by_date(donations, start_date, end_date)
-    supplies = filter_by_date(supplies, start_date, end_date)
-    ledger = filter_by_date(ledger, start_date, end_date)
-
     return build_markdown_output(donations, supplies, ledger)
 
 
@@ -257,11 +232,10 @@ async def get_log_channel():
     return channel
 
 
-async def build_raw_log_from_channel(start_date=None, end_date=None) -> str:
+async def build_raw_log_from_channel(start_date: date | None, end_date: date | None) -> str:
     """
-    Fetch messages from the log channel, filter them by created_at date,
-    and combine their content (including embeds & text attachments)
-    into one big text blob.
+    Fetch messages from the log channel, filter them by created_at date (message timestamp),
+    and combine their content (including embeds & text attachments) into one big text blob.
     """
     channel = await get_log_channel()
     if channel is None:
@@ -349,7 +323,7 @@ async def logsummary_last7(ctx):
     start = today - timedelta(days=7)
 
     raw_log = await build_raw_log_from_channel(start_date=start, end_date=today)
-    output = summarize_log(raw_log, start_date=start, end_date=today)
+    output = summarize_log(raw_log)
 
     for part in chunk_text(output):
         await ctx.send(part)
@@ -369,7 +343,7 @@ async def logsummary_range(ctx, start_str: str, end_str: str):
         return
 
     raw_log = await build_raw_log_from_channel(start_date=start, end_date=end)
-    output = summarize_log(raw_log, start_date=start, end_date=end)
+    output = summarize_log(raw_log)
 
     for part in chunk_text(output):
         await ctx.send(part)
