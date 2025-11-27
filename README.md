@@ -1,269 +1,214 @@
-# 🎣 MUGIWARAS LOG SUMMONER
+````md
+# 🏴‍☠️ Mugiwaras Log Bot
 
-### *The funky Discord bot that turns boring clan logs into juicy, beautiful summaries.*
-
-<div align="center">
-
-
-
-🌐 **Automatically extracts & summarizes:**
-
-* 🧱 Materials Donations
-* 📦 Supply Missions
-* 💰 Ledger Transactions
-* 👤 Per-user donation counts & totals
-
-✨ **Supports real @DisplayName mentions**  
-✨ **Beautiful, aligned Markdown tables**  
-✨ **Prefix `!` *and* slash `/` commands**
-
-</div>
+Ahoy, captain!  
+This is a Discord bot that sails through your log channel, parses clan activity, and prints **clean, beautiful markdown reports** for donations, supplies, and ledger transactions. Perfect for game clans, RP servers, or any community tracking contributions.  
 
 ---
 
 ## ✨ Features
 
-### 🧩 Smart Log Parsing
-
-* Detects **donations**, **supplies**, and **ledger** entries
-* Supports log bots producing multi-line log blocks
-* Extracts:
-  * Materials donated (`Materials added`)
-  * Supplies delivered (`Delivered Supplies`)
-  * Dollar amounts in ledger (`$123.45`)
-* Cleans & normalizes weird numeric formats like `1,23` → `1.23`
-
----
-
-### 💎 Beautiful Output
-
-Every summary is printed as a clean Markdown table, chunked safely under Discord’s character limit:
-
-````md
-```md
-**🟥 Donations Breakdown Table Summary**
-
-| Name                         | Donations | Total Materials Value |
-| ---------------------------- | --------- | --------------------- |
-| Gamer_anz                    |        68 |                163.20 |
-| Freddy Fenix [Manager]       |        28 |                 66.10 |
-| RACCOON                      |        24 |                 51.75 |
-
-
-Sections are always generated in this order:
-
-1. 🟥 **Donations Breakdown Table Summary**  
-2. 🟦 **Overall Totals**  
-3. 🟩 **Supply Mission Summary**  
-4. 🟨 **Ledger Transactions** (with `$` in the Amount column)
+- 🔍 **Parses raw log messages** (including embeds & `.txt` / `.log` attachments)
+- 💰 **Donation breakdown** per player (count + total materials)
+- 📦 **Supply mission summary**
+- 🧾 **Ledger transactions** with deposits / withdrawals
+- 🧠 Auto-resolves `<@ID>` mentions to usernames in tables
+- 📅 **Date range filtering** with both:
+  - `!` **prefix commands**
+  - `/` **slash commands**
+- 📊 Output formatted in **Discord-friendly markdown tables**  
+- ✅ Handles long output by **auto-chunking** into multiple messages
 
 ---
 
-### 🧠 Mention Resolver
+## 🧱 Tech Stack
 
-* Converts `<@123456789>` → `DisplayName`
-* Uses live guild member list to resolve IDs
-* Leaves normal text names untouched
-* Works even if the log contains weird trailing IDs
-
----
-
-### 🧾 Command Overview
-
-The bot supports **both prefix `!` commands** and **slash `/` commands**.
-
-#### ⌨️ Prefix Commands (`!`)
-
-All date ranges use **`DD-MM-YYYY`**.
-
-**Summary commands**
-
-| Command                                                | Description                                |
-| ------------------------------------------------------ | ------------------------------------------ |
-| `!logsummary7`                                         | Full summary for the last 7 days          |
-| `!logsummary_all`                                      | Full summary using all logs in the channel |
-| `!logsummary_range DD-MM-YYYY DD-MM-YYYY`              | Full summary for a custom date range      |
-| `!logdebug_range DD-MM-YYYY DD-MM-YYYY`                | Raw log preview + parse stats + summary   |
-
-**Section-only commands (cleaner chat)**
-
-These only print *one* of the four sections:
-
-| Command                                                | Shows only…                    |
-| ------------------------------------------------------ | ------------------------------ |
-| `!logdonations_range DD-MM-YYYY DD-MM-YYYY`            | 🟥 Donations Breakdown         |
-| `!logtotals_range DD-MM-YYYY DD-MM-YYYY`               | 🟦 Overall Totals              |
-| `!logsupply_range DD-MM-YYYY DD-MM-YYYY`               | 🟩 Supply Mission Summary      |
-| `!logledger_range DD-MM-YYYY DD-MM-YYYY`               | 🟨 Ledger Transactions (with $)|
+- 🐍 Python
+- 🤖 [discord.py](https://github.com/Rapptz/discord.py)
+- ⏱ `asyncio` + Discord history API
+- 🧮 Custom log parser + markdown table formatter
 
 ---
 
-#### ⚡ Slash Commands (`/`)
+## 🚀 Commands Overview
 
-Same features as above, but as Discord-native slash commands.
+> All dates use the format: `DD-MM-YYYY` (e.g. `01-12-2025`)
 
-**Full summaries**
+### 🔹 Prefix Commands (`!`)
 
-- `/logsummary_all`
-- `/logsummary7`
-- `/logsummary_range start_str: DD-MM-YYYY end_str: DD-MM-YYYY`
-- `/logdebug_range start_str: DD-MM-YYYY end_str: DD-MM-YYYY`
+```text
+!logsummary_all
+    Summarize ALL logs in the log channel.
 
-**Section-only summaries**
+!logsummary7
+    Summarize logs from the last 7 days.
 
-- `/logdonations_range start_str: DD-MM-YYYY end_str: DD-MM-YYYY`
-- `/logtotals_range start_str: DD-MM-YYYY end_str: DD-MM-YYYY`
-- `/logsupply_range start_str: DD-MM-YYYY end_str: DD-MM-YYYY`
-- `/logledger_range start_str: DD-MM-YYYY end_str: DD-MM-YYYY`
+!logsummary_range <start> <end>
+    Example: !logsummary_range 01-12-2025 07-12-2025
 
-> Prefix and slash commands coexist. You can keep using `!` while slowly moving your users to `/`.
+!logdebug_range <start> <end>
+    Debug helper: preview raw logs + parsed counts.
+````
 
----
+#### Section-specific (Prefix)
 
-## 🔧 How It Works
+```text
+!logdonations_range <start> <end>
+    Only show Donations Breakdown table.
 
-1. Bot reads all messages & embeds from your configured **log channel**
-2. For each message, it extracts:
-   - Text content
-   - Embed title, description, and fields
-   - Attached `.txt` / `.log` files
-3. It parses lines to detect:
-   - **Donations** – `"Donated"` + `"Materials added ..."`
-   - **Supplies** – `"Delivered Supplies ..."`
-   - **Ledger** – `"Deposited to clan ledger"` / `"Withdrew from clan ledger"` + `$amount`
-4. It maps Discord IDs → display names using the guild member list
-5. It aggregates by user and renders Markdown tables
+!logtotals_range <start> <end>
+    Only show Overall Totals.
 
-No manual Excel. No copy–paste pain. Just type a command and get a neat breakdown.
+!logsupply_range <start> <end>
+    Only show Supply Mission summary.
 
----
-
-## 🛠️ Setup
-
-### 1️⃣ Requirements
-
-- Python **3.10+** recommended
-- `discord.py` **2.x** (for slash commands support)
-
-Install dependencies:
-
-```bash
-pip install -U discord.py
+!logledger_range <start> <end>
+    Only show Ledger transactions.
 ```
 
-### 2️⃣ Discord Bot Setup
+---
 
-In the **Discord Developer Portal**:
+### 🔹 Slash Commands (`/`)
 
-1. Go to **Bot → Privileged Gateway Intents**:
-   - ☑ **SERVER MEMBERS INTENT**
-   - ☑ **MESSAGE CONTENT INTENT**
-2. Under **OAuth2 → URL Generator**:
-   - Scopes:
-     - ☑ `bot`
-     - ☑ `applications.commands`
-   - Bot Permissions: at least:
-     - Read Messages / View Channels
-     - Send Messages
-     - Read Message History
+All slash commands mirror the prefix ones:
 
-Invite the bot to your server using the generated URL.
+```text
+/logsummary_all
+/logsummary7
+/logsummary_range      (start_str, end_str)
+/logdebug_range        (start_str, end_str)
 
-### 3️⃣ Environment Variables
+/logdonations_range    (start_str, end_str)
+/logtotals_range       (start_str, end_str)
+/logsupply_range       (start_str, end_str)
+/logledger_range       (start_str, end_str)
+```
 
-Set these (e.g. in Railway / Docker / `.env`):
+Each slash command:
+
+* Reads the configured log channel
+* Parses donations, supplies, and ledger
+* Sends one or more **markdown-formatted** tables back to the channel
+
+---
+
+## ⚙️ Setup
+
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/<your-user>/<your-repo>.git
+cd <your-repo>
+```
+
+### 2. Install dependencies
+
+```bash
+pip install -U "discord.py>=2.0.0"
+```
+
+(or add a `requirements.txt` with your versions)
+
+### 3. Environment variables
+
+Set these in your environment / Railway / Docker:
 
 ```bash
 TOKEN=your_discord_bot_token
 LOG_CHANNEL_ID=123456789012345678
 ```
 
-- `TOKEN` – your bot token from the Developer Portal  
-- `LOG_CHANNEL_ID` – the numeric ID of the channel where your clan logs are posted
+* `TOKEN` → Your bot token from the [Discord Developer Portal](https://discord.com/developers/applications)
+* `LOG_CHANNEL_ID` → Channel where logs / webhooks are being posted
 
----
-
-## 🚀 Running the Bot
-
-Local:
+### 4. Run the bot
 
 ```bash
 python bot.py
 ```
 
-Railway / other hosting:
+On startup you should see something like:
 
-- Add your repo
-- Set `TOKEN` and `LOG_CHANNEL_ID` as environment variables
-- Use `python bot.py` as the start command
+```text
+✔ Logged in as Mugiwaras Bot#1234 (ID 1443397730624868473)
+✔ Globally synced X slash commands
+```
 
 ---
 
-## 📘 Example Usage
+## 🧩 How It Works (High Level)
 
-### Full summaries
+* Reads messages from the configured **log channel**
+* Extracts:
 
-```text
-!logsummary7
-!logsummary_all
-!logsummary_range 01-11-2025 07-11-2025
+  * raw text
+  * embed title / description / fields
+  * `.txt` / `.log` attachment contents
+* Uses regex-based parsing to detect:
+
+  * `Donated ... Materials added ...`
+  * `Delivered ... Supplies ...`
+  * `Deposited to clan ledger` / `Withdrew from clan ledger`
+* Maps `<@ID>` → display names and builds structured tables:
+
+  * **Donations Breakdown Summary**
+  * **Overall Totals**
+  * **Supply Mission Summary**
+  * **Ledger Transactions**
+* Sends them back using code-block markdown for clean Discord visuals.
+
+---
+
+## 🧭 Example Output
+
+```md
+🟥 Donations Breakdown Table Summary
+
+| Name                           | Donations | Total Materials Value |
+| ------------------------------ | --------- | --------------------- |
+| Gerralt Rivia [Manager]       |        70 |                166.95 |
+| Henery James [Watcher]        |        68 |                119.05 |
+
+🟦 Overall Totals
+
+| Total Donations | Total Materials Value |
+| --------------- | --------------------- |
+|             213 |                468.30 |
 ```
 
-or as slash commands:
-
-```text
-/logsummary7
-/logsummary_range start_str: 01-11-2025 end_str: 07-11-2025
-```
-
-### Section-only (cleaner chat)
-
-```text
-!logdonations_range 01-11-2025 07-11-2025
-!logledger_range 01-11-2025 07-11-2025
-```
-
-```text
-/logsupply_range start_str: 01-11-2025 end_str: 07-11-2025
-/logtotals_range start_str: 01-11-2025 end_str: 07-11-2025
-```
+*(Exact numbers depend on your logs, of course)*
 
 ---
 
 ## 🧪 Debugging
 
-If parsing looks off, use:
+If your logs don’t parse correctly:
 
-```text
-!logdebug_range 01-11-2025 07-11-2025
-```
+1. Use:
 
-or:
+   ```text
+   !logdebug_range 01-12-2025 07-12-2025
+   ```
+2. Check the **preview** of the raw log content.
+3. Confirm your log lines match these patterns:
 
-```text
-/logdebug_range start_str: 01-11-2025 end_str: 07-11-2025
-```
+   * `Donated ... Materials added`
+   * `Delivered ... Supplies`
+   * `Deposited to clan ledger $...`
+   * `Withdrew from clan ledger $...`
 
-This will show:
-
-- How many characters of raw log were fetched
-- A text preview of the raw log
-- Parsed counts: donations / supplies / ledger
-- The final tables
+You can then tweak the regex / parsing logic as needed.
 
 ---
 
-## 🌈 Why This Bot Slaps
+## 🏴‍☠️ Credits & License
 
-- Cleanest log summaries in the seven seas 🏴‍☠️  
-- Leaders get instant clarity on donations & supplies  
-- Members see their contributions with proper names  
-- Ledger amounts show with `$` so it looks like a real finance sheet  
-- Supports both old-school `!` and modern `/` commands
+* Built with ❤️, ☕, and too many test runs.
+* Inspired by clan management and log parsing madness.
+* License: **MIT** (or whichever you prefer – update this line).
 
----
+If you like this bot, feel free to ⭐ the repo and share it with your crew!
+Fair winds and following seas, captain. ⛵
 
-## 🏴‍☠️ Built for **MUGIWARAS**
-
-> *“Because pirates deserve clean spreadsheets too.”*
+```
 ```
