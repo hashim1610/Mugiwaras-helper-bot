@@ -352,7 +352,8 @@ async def logsummary_range(ctx, start_str: str, end_str: str):
 @bot.command(name="logdebug_range")
 async def logdebug_range(ctx, start_str: str, end_str: str):
     """
-    Debug command: shows how much raw log text we fetched and a small preview.
+    Debug command: shows how much raw log text we fetched,
+    a small preview, and what the parser sees (donation counts + tables).
     Usage: !logdebug_range 2025-11-25 2025-11-27
     """
     try:
@@ -364,8 +365,26 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
 
     raw_log = await build_raw_log_from_channel(start_date=start, end_date=end)
     await ctx.send(f"Fetched {len(raw_log)} characters from log channel.")
+
     preview = raw_log[:800] or "(no text)"
     await ctx.send(f"Preview:\n```{preview}```")
 
+    # ---- NEW: run the parser directly on the same raw_log ----
+    cleaned = strip_code_block(raw_log)
+    donations, supplies, ledger = parse_log(cleaned)
+
+    await ctx.send(
+        f"Parser results:\n"
+        f"- Donations: {len(donations)}\n"
+        f"- Supplies: {len(supplies)}\n"
+        f"- Ledger entries: {len(ledger)}"
+    )
+
+    # Show the tables it would generate
+    tables = build_markdown_output(donations, supplies, ledger)
+    for part in chunk_text(tables):
+        await ctx.send(part)
+
 
 bot.run(TOKEN)
+
