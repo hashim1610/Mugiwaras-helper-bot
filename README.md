@@ -146,13 +146,3 @@ or
 *“Because pirates deserve clean spreadsheets too.”*
 
 ---
-
-If you want, I can also generate:
-
-* A matching **logo**
-* A **badge section** (Python version, Railway CI, License, etc.)
-* A **screenshots** section
-* A **fancy animated banner**
-* A **Dockerfile** or **Railway template repo**
-
-Just tell me.
