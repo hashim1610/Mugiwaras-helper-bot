@@ -4,6 +4,7 @@ from datetime import datetime, date, timedelta
 
 import discord
 from discord.ext import commands
+from discord import app_commands  # NEW: for slash commands
 
 # --------------------------------------------------------------------
 # CONFIG
@@ -303,8 +304,9 @@ def build_markdown_output(donations, supplies, ledger, id_to_name=None):
     for l in ledger:
         base_name = display_name_from_mention(l["name"], id_to_name)
         transition = "⬆️ Deposit" if l["transition"] == "Deposit" else "⬇️ Withdrawal"
+        # UPDATED: added "$" to the amount column
         ledger_rows.append(
-            [base_name, transition, f"{l['amount']:.2f}"]
+            [base_name, transition, f"${l['amount']:.2f}"]
         )
 
     sections.append(
@@ -396,8 +398,27 @@ def chunk_text(text: str, limit=1800):
 
 
 async def send_pretty(ctx, text: str):
+    """Existing helper for prefix (!) commands – unchanged."""
     for part in chunk_text(text):
         await ctx.send(f"```md\n{part.strip()}\n```")
+
+
+async def send_pretty_interaction(interaction: discord.Interaction, text: str):
+    """
+    NEW: Same as send_pretty, but for slash commands.
+    First chunk uses interaction.response, rest use followup.
+    """
+    chunks = list(chunk_text(text))
+    if not chunks:
+        await interaction.response.send_message("```md\n(no data)\n```")
+        return
+
+    # First message
+    await interaction.response.send_message(f"```md\n{chunks[0].strip()}\n```")
+
+    # Additional chunks
+    for extra in chunks[1:]:
+        await interaction.followup.send(f"```md\n{extra.strip()}\n```")
 
 
 # --------------------------------------------------------------------
@@ -407,7 +428,15 @@ async def send_pretty(ctx, text: str):
 @bot.event
 async def on_ready():
     print(f"✔ Logged in as {bot.user} (ID {bot.user.id})")
+    # NEW: sync slash commands
+    try:
+        synced = await bot.tree.sync()
+        print(f"✔ Synced {len(synced)} slash commands")
+    except Exception as e:
+        print(f"❌ Failed to sync slash commands: {e}")
 
+
+# ----------------------- PREFIX (!) COMMANDS ------------------------
 
 @bot.command()
 async def logsummary_all(ctx):
@@ -463,6 +492,94 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
     id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
     out = build_markdown_output(donations, supplies, ledger, id_to_name)
     await send_pretty(ctx, out)
+
+
+# ------------------------ SLASH (/) COMMANDS ------------------------
+
+@bot.tree.command(name="logsummary_all", description="Summarize all logs in the log channel")
+async def logsummary_all_slash(interaction: discord.Interaction):
+    raw = await build_raw_log_from_channel(None, None)
+    guild = interaction.guild
+    id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
+    out = summarize_log(raw, id_to_name)
+    await send_pretty_interaction(interaction, out)
+
+
+@bot.tree.command(name="logsummary7", description="Summarize the last 7 days of logs")
+async def logsummary7_slash(interaction: discord.Interaction):
+    today = date.today()
+    start = today - timedelta(days=7)
+    raw = await build_raw_log_from_channel(start, today)
+    guild = interaction.guild
+    id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
+    out = summarize_log(raw, id_to_name)
+    await send_pretty_interaction(interaction, out)
+
+
+@bot.tree.command(name="logsummary_range", description="Summarize logs between two dates")
+@app_commands.describe(
+    start_str="Start date (YYYY-MM-DD)",
+    end_str="End date (YYYY-MM-DD)"
+)
+async def logsummary_range_slash(
+    interaction: discord.Interaction,
+    start_str: str,
+    end_str: str
+):
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d").date()
+        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+    except:
+        await interaction.response.send_message(
+            "❌ Use format: `YYYY-MM-DD` for both dates.",
+            ephemeral=True
+        )
+        return
+
+    raw = await build_raw_log_from_channel(start, end)
+    guild = interaction.guild
+    id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
+    out = summarize_log(raw, id_to_name)
+    await send_pretty_interaction(interaction, out)
+
+
+@bot.tree.command(name="logdebug_range", description="Debug + summarize logs between two dates")
+@app_commands.describe(
+    start_str="Start date (YYYY-MM-DD)",
+    end_str="End date (YYYY-MM-DD)"
+)
+async def logdebug_range_slash(
+    interaction: discord.Interaction,
+    start_str: str,
+    end_str: str
+):
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d").date()
+        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+    except:
+        await interaction.response.send_message(
+            "❌ Use format: `YYYY-MM-DD` for both dates.",
+            ephemeral=True
+        )
+        return
+
+    raw = await build_raw_log_from_channel(start, end)
+
+    # First message: basic stats
+    msg = f"Fetched {len(raw)} chars"
+    preview = raw[:800] or "(no text)"
+    msg_preview = f"{msg}\n```text\n{preview}\n```"
+    await interaction.response.send_message(msg_preview)
+
+    donations, supplies, ledger = parse_log(raw)
+    await interaction.followup.send(
+        f"Parsed:\nDonations: {len(donations)}\nSupplies: {len(supplies)}\nLedger: {len(ledger)}"
+    )
+
+    guild = interaction.guild
+    id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
+    out = build_markdown_output(donations, supplies, ledger, id_to_name)
+    await send_pretty_interaction(interaction, out)
 
 
 # ---------------------------------------------------------------
