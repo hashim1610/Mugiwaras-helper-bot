@@ -14,245 +14,180 @@ LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))  # set in Railway
 
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True  # needed to resolve IDs -> display names
+intents.members = True  # Needed for resolving <@ID> → DisplayName
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
 # --------------------------------------------------------------------
-# SMALL HELPERS
+# BASIC HELPERS
 # --------------------------------------------------------------------
 
 def strip_code_block(text: str) -> str:
     text = text.strip()
     if text.startswith("```") and text.endswith("```"):
-        text = text[3:-3].strip()
+        return text[3:-3].strip()
     return text
 
 
 def normalize_number(num_str: str) -> float:
-    """Turn '3.5' or '3,5' into float(3.5)."""
-    num_str = num_str.strip().replace(",", ".")
-    return float(num_str)
+    return float(num_str.replace(",", ".").strip())
 
+
+# --------------------------------------------------------------------
+# NAME CLEANING / MENTION RESOLVING
+# --------------------------------------------------------------------
 
 def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
     """
-    Clean up the "Discord: ..." content into a usable name/mention.
-
-    Priority:
-    1) If we can see an ID (like ... 1116155335854534766), use it to form <@ID>
-    2) If there's a raw mention <@ID>, keep <@ID>
-    3) Otherwise fall back to a text '@Name'
-    4) If the 'name' is just a long row of dashes/underscores, ignore it
+    Extract meaningful name from log line.
+    Prefer <@ID> → resolved display name.
     """
-    s = discord_part.strip()
-    if not s:
-        return None
+    s = discord_part.replace("**", "").replace("`", "").strip()
 
-    # Remove markdown clutter
-    s = s.replace("**", "").replace("`", "").strip()
-
-    # --- Case 1: raw mention <@...> or <@!...> in this line ---
+    # Raw mention in this line
     m = re.search(r"<@!?(\d+)>", s)
     if m:
-        user_id = m.group(1)
-        return f"<@{user_id}>"
+        return f"<@{m.group(1)}>"
 
-    # --- Case 2: trailing numeric ID token in this line ---
+    # Pattern like: @Name ... ID
     tokens = s.split()
     if tokens and tokens[-1].isdigit():
-        user_id = tokens[-1]
-        return f"<@{user_id}>"
+        return f"<@{tokens[-1]}>"
 
-    # --- Case 3: look at a couple of next lines for an ID or mention ---
+    # Look ahead for name or ID
     for k in range(idx + 1, min(idx + 4, len(lines))):
-        candidate = lines[k].strip()
-        if not candidate:
+        nxt = lines[k].replace("**", "").replace("`", "").strip()
+        if not nxt:
             continue
-        candidate = candidate.replace("**", "").replace("`", "").strip()
 
-        # raw mention in next line
-        m2 = re.search(r"<@!?(\d+)>", candidate)
+        m2 = re.search(r"<@!?(\d+)>", nxt)
         if m2:
             return f"<@{m2.group(1)}>"
 
-        parts = candidate.split()
+        parts = nxt.split()
         if parts and parts[-1].isdigit():
             return f"<@{parts[-1]}>"
 
-        # fallback text name from next line
-        if parts:
-            name = parts[0]
-            if not name.startswith("@"):
-                name = "@" + name.lstrip("@")
-            # avoid junk-only dashed names
-            core = name.lstrip("@").strip()
-            if core and all(ch in "-_" for ch in core) and len(core) > 5:
-                continue
-            return name
+        # fallback textual name
+        name = " ".join(parts)
+        return name
 
-    # --- Case 4: fallback to text name from this line ---
-    # Try to start at first '@' if present
-    at_pos = s.find("@")
-    candidate = s[at_pos:] if at_pos != -1 else s
-    candidate = candidate.strip()
-    parts = candidate.split()
-    if not parts:
-        return None
-
-    if not parts[0].startswith("@"):
-        parts[0] = "@" + parts[0].lstrip("@")
-    name = " ".join(parts)
-
-    # Remove trailing numeric ID if somehow still there
-    parts2 = name.split()
-    if len(parts2) > 1 and parts2[-1].isdigit():
-        parts2 = parts2[:-1]
-    name = " ".join(parts2).strip()
-
-    core = name.lstrip("@").strip()
-    if core and all(ch in "-_" for ch in core) and len(core) > 5:
-        return None
-
-    return name or None
-
-
-def extract_number_after_marker(text: str, marker: str) -> float | None:
-    """
-    From a line, find first number after 'marker'.
-    Example: text='Donated ... Materials added: 3.5 ID: 2159', marker='Materials added'
-    """
-    if marker not in text:
-        return None
-    tail = text.split(marker, 1)[1]
-    # scan characters for first number
-    num_chars = ""
-    seen_digit = False
-    for ch in tail:
-        if ch.isdigit() or ch in ".,":  # allow comma / dot
-            num_chars += ch
-            seen_digit = True
-        elif seen_digit:
-            break
-    if not seen_digit:
-        return None
-    try:
-        return normalize_number(num_chars)
-    except ValueError:
-        return None
-
-
-def extract_number_after_char(text: str, ch_marker: str) -> float | None:
-    """
-    Find first number after a specific char marker, e.g. '$'.
-    """
-    if ch_marker not in text:
-        return None
-    tail = text.split(ch_marker, 1)[1]
-    num_chars = ""
-    seen_digit = False
-    for ch in tail:
-        if ch.isdigit() or ch in ".,":  # allow comma / dot
-            num_chars += ch
-            seen_digit = True
-        elif seen_digit:
-            break
-    if not seen_digit:
-        return None
-    try:
-        return normalize_number(num_chars)
-    except ValueError:
-        return None
+    # Final fallback: use raw cleaned text
+    return s or None
 
 
 def display_name_from_mention(name: str, id_to_name: dict | None) -> str:
     """
-    If 'name' is a pure Discord mention like '<@1234>' or '<@!1234>',
-    and we know that ID in id_to_name, return '@DisplayName'.
-    Otherwise, return the original name.
+    Convert <@ID> → DisplayName (no leading @).
+    If not a mention or unknown, return name as-is.
     """
     if not id_to_name:
         return name
 
     m = re.fullmatch(r"<@!?(\d+)>", name.strip())
     if not m:
-        return name
+        return name  # already a normal name
 
-    user_id = m.group(1)
-    disp = id_to_name.get(user_id)
+    uid = m.group(1)
+    disp = id_to_name.get(uid)
     if not disp:
         return name
 
-    return "@" + disp
+    return disp  # NO '@' here
 
 
 # --------------------------------------------------------------------
-# PARSER (LINE-BY-LINE, SIMPLE)
+# NUMBER EXTRACTION HELPERS
+# --------------------------------------------------------------------
+
+def extract_number_after_marker(text: str, marker: str) -> float | None:
+    if marker not in text:
+        return None
+    tail = text.split(marker, 1)[1]
+    digits = ""
+    started = False
+    for ch in tail:
+        if ch.isdigit() or ch in ".,": 
+            digits += ch
+            started = True
+        elif started:
+            break
+    return normalize_number(digits) if digits else None
+
+
+def extract_number_after_char(text: str, ch_marker: str) -> float | None:
+    if ch_marker not in text:
+        return None
+    tail = text.split(ch_marker, 1)[1]
+    digits = ""
+    started = False
+    for ch in tail:
+        if ch.isdigit() or ch in ".,": 
+            digits += ch
+            started = True
+        elif started:
+            break
+    return normalize_number(digits) if digits else None
+
+
+# --------------------------------------------------------------------
+# PARSER (Donations / Supplies / Ledger)
 # --------------------------------------------------------------------
 
 def parse_log(raw_log: str):
-    """
-    Parse the raw clan log text and return three lists:
-    donations, supplies, ledger.
-
-    date filtering is done at message level when building raw_log.
-    """
     lines = raw_log.splitlines()
-
-    donations = []  # {name, materials}
-    supplies = []   # {name, amount}
-    ledger = []     # {name, transition, amount}
-
     n = len(lines)
+
+    donations = []
+    supplies = []
+    ledger = []
+
     i = 0
     while i < n:
         line = lines[i].strip()
 
-        # ---------- Donations ----------
-        if "Donated" in line and "Materials" in line and "added" in line:
+        # Donations
+        if "Donated" in line and "Materials added" in line:
             materials = extract_number_after_marker(line, "Materials added")
             if materials is not None:
-                # look ahead for Discord line
                 name = None
                 for j in range(i + 1, min(i + 6, n)):
                     if "Discord:" in lines[j]:
-                        discord_part = lines[j].split("Discord:", 1)[1]
-                        name = clean_discord_name(discord_part, lines, j)
+                        dp = lines[j].split("Discord:", 1)[1]
+                        name = clean_discord_name(dp, lines, j)
                         break
                 if name:
                     donations.append({"name": name, "materials": materials})
 
-        # ---------- Supplies ----------
+        # Supplies
         if "Delivered" in line and "Supplies" in line:
-            amount = extract_number_after_marker(line, "Delivered Supplies")
-            if amount is not None:
+            amt = extract_number_after_marker(line, "Delivered Supplies")
+            if amt is not None:
                 name = None
                 for j in range(i + 1, min(i + 6, n)):
                     if "Discord:" in lines[j]:
-                        discord_part = lines[j].split("Discord:", 1)[1]
-                        name = clean_discord_name(discord_part, lines, j)
+                        dp = lines[j].split("Discord:", 1)[1]
+                        name = clean_discord_name(dp, lines, j)
                         break
                 if name:
-                    supplies.append({"name": name, "amount": amount})
+                    supplies.append({"name": name, "amount": amt})
 
-        # ---------- Ledger ----------
-        if "Deposited to clan ledger" in line or "Withdrew from clan ledger" in line:
-            if "Deposited" in line:
-                transition = "Deposit"
-            else:
-                transition = "Withdrawal"
+        # Ledger
+        if ("Deposited to clan ledger" in line) or ("Withdrew from clan ledger" in line):
+            trans = "Deposit" if "Deposited" in line else "Withdrawal"
+            amt = extract_number_after_char(line, "$")
 
-            amount = extract_number_after_char(line, "$")
-            if amount is not None:
+            if amt is not None:
                 name = None
                 for j in range(i + 1, min(i + 6, n)):
                     if "Discord:" in lines[j]:
-                        discord_part = lines[j].split("Discord:", 1)[1]
-                        name = clean_discord_name(discord_part, lines, j)
+                        dp = lines[j].split("Discord:", 1)[1]
+                        name = clean_discord_name(dp, lines, j)
                         break
+
                 if name:
-                    ledger.append({"name": name, "transition": transition, "amount": amount})
+                    ledger.append({"name": name, "transition": trans, "amount": amt})
 
         i += 1
 
@@ -260,332 +195,277 @@ def parse_log(raw_log: str):
 
 
 # --------------------------------------------------------------------
-# TABLE BUILDING (PRETTIER)
+# TABLE GENERATOR
 # --------------------------------------------------------------------
 
-def make_table(headers, rows, align_right=None) -> str:
-    """
-    Build a padded table with | pipes, with optional right-aligned columns.
-    Returns a multi-line string (no code fences).
-    """
+def make_table(headers, rows, align_right=None):
     if align_right is None:
         align_right = set()
 
-    # Compute column widths
     cols = len(headers)
     widths = [len(str(h)) for h in headers]
-    for row in rows:
+
+    for r in rows:
         for i in range(cols):
-            cell = "" if i >= len(row) else str(row[i])
-            widths[i] = max(widths[i], len(cell))
+            widths[i] = max(widths[i], len(str(r[i])))
 
     def fmt_row(row):
         cells = []
         for i in range(cols):
-            cell = "" if i >= len(row) else str(row[i])
+            c = str(row[i])
             if i in align_right:
-                cells.append(cell.rjust(widths[i]))
+                cells.append(c.rjust(widths[i]))
             else:
-                cells.append(cell.ljust(widths[i]))
+                cells.append(c.ljust(widths[i]))
         return "| " + " | ".join(cells) + " |"
 
-    # Header + separator
-    sep_cells = []
-    for i, w in enumerate(widths):
-        sep_cells.append("-" * w)
-    header_line = fmt_row(headers)
-    sep_line = "| " + " | ".join(sep_cells) + " |"
+    header = fmt_row(headers)
+    sep = "| " + " | ".join("-" * w for w in widths) + " |"
 
-    lines = [header_line, sep_line]
-    for row in rows:
-        lines.append(fmt_row(row))
+    result = [header, sep]
+    for r in rows:
+        result.append(fmt_row(r))
 
-    return "\n".join(lines)
+    return "\n".join(result)
 
+
+# --------------------------------------------------------------------
+# BUILD FINAL MARKDOWN OUTPUT (WITH COLORS & EMOJI)
+# --------------------------------------------------------------------
 
 def build_markdown_output(donations, supplies, ledger, id_to_name=None):
-    """
-    Build the final string with exactly 4 sections
-    (titles + pretty tables), no extra commentary.
-    """
+    sections = []
 
-    # ----- Donations summary -----
-    donation_by_name = {}
+    # Donations summary
+    donation_map = {}
     for d in donations:
-        name = d["name"]
-        mat = d["materials"]
-        if name not in donation_by_name:
-            donation_by_name[name] = {"count": 0, "total": 0.0}
-        donation_by_name[name]["count"] += 1
-        donation_by_name[name]["total"] += mat
+        nm = d["name"]
+        mt = d["materials"]
+        donation_map.setdefault(nm, {"count": 0, "total": 0})
+        donation_map[nm]["count"] += 1
+        donation_map[nm]["total"] += mt
 
-    # Sort by Donations desc, then Total Materials Value desc
-    sorted_donations = sorted(
-        donation_by_name.items(),
+    sorted_don = sorted(
+        donation_map.items(),
         key=lambda kv: (-kv[1]["count"], -kv[1]["total"])
     )
 
-    total_donation_count = sum(v["count"] for v in donation_by_name.values())
-    total_materials_sum = sum(v["total"] for v in donation_by_name.values())
+    total_count = sum(v["count"] for v in donation_map.values())
+    total_mat = sum(v["total"] for v in donation_map.values())
 
-    sections = []
+    # 1) Donations table
+    sections.append("**🟥 Donations Breakdown Table Summary**")
 
-    # 1) Donations Breakdown Table Summary
-    sections.append("**Donations Breakdown Table Summary**")
     donation_rows = [
         [
             display_name_from_mention(name, id_to_name),
             stats["count"],
             f"{stats['total']:.2f}",
         ]
-        for name, stats in sorted_donations
+        for name, stats in sorted_don
     ]
-    donations_table = make_table(
-        headers=["Name", "Donations", "Total Materials Value"],
-        rows=donation_rows,
-        align_right={1, 2},
+
+    sections.append(
+        make_table(
+            ["Name", "Donations", "Total Materials Value"],
+            donation_rows,
+            align_right={1, 2}
+        )
     )
-    sections.append(donations_table)
 
     # 2) Overall Totals
-    sections.append("**Overall Totals**")
-    overall_table = make_table(
-        headers=["Total Donations", "Total Materials Value"],
-        rows=[[total_donation_count, f"{total_materials_sum:.2f}"]],
-        align_right={0, 1},
+    sections.append("**🟦 Overall Totals**")
+    sections.append(
+        make_table(
+            ["Total Donations", "Total Materials Value"],
+            [[total_count, f"{total_mat:.2f}"]],
+            align_right={0, 1}
+        )
     )
-    sections.append(overall_table)
 
-    # 3) Supply Mission Summary
-    sections.append("**Supply Mission Summary**")
+    # 3) Supplies
+    sections.append("**🟩 Supply Mission Summary**")
     supply_rows = [
         [display_name_from_mention(s["name"], id_to_name), f"{s['amount']:.2f}"]
         for s in supplies
     ]
-    supply_table = make_table(
-        headers=["Name", "Supplies Delivered"],
-        rows=supply_rows,
-        align_right={1},
+    sections.append(
+        make_table(
+            ["Name", "Supplies Delivered"],
+            supply_rows,
+            align_right={1}
+        )
     )
-    sections.append(supply_table)
 
-    # 4) Ledger Transactions
-    sections.append("**Ledger Transactions**")
-    ledger_rows = [
-        [
-            display_name_from_mention(l["name"], id_to_name),
-            l["transition"],
-            f"{l['amount']:.2f}",
-        ]
-        for l in ledger
-    ]
-    ledger_table = make_table(
-        headers=["Name", "Transition", "Amount"],
-        rows=ledger_rows,
-        align_right={2},
+    # 4) Ledger
+    sections.append("**🟨 Ledger Transactions**")
+    ledger_rows = []
+    for l in ledger:
+        base_name = display_name_from_mention(l["name"], id_to_name)
+        transition = "⬆️ Deposit" if l["transition"] == "Deposit" else "⬇️ Withdrawal"
+        ledger_rows.append(
+            [base_name, transition, f"{l['amount']:.2f}"]
+        )
+
+    sections.append(
+        make_table(
+            ["Name", "Transition", "Amount"],
+            ledger_rows,
+            align_right={2}
+        )
     )
-    sections.append(ledger_table)
 
-    # Join all sections, separated by blank lines
     return "\n\n".join(sections)
 
 
-def summarize_log(raw_log: str, id_to_name: dict | None = None) -> str:
+def summarize_log(raw_log: str, id_to_name=None) -> str:
     raw_log = strip_code_block(raw_log)
     donations, supplies, ledger = parse_log(raw_log)
-    return build_markdown_output(donations, supplies, ledger, id_to_name=id_to_name)
+    return build_markdown_output(donations, supplies, ledger, id_to_name)
 
 
 # --------------------------------------------------------------------
-# DISCORD CHANNEL READING
+# DISCORD: READ CHANNEL
 # --------------------------------------------------------------------
 
 async def get_log_channel():
     if LOG_CHANNEL_ID == 0:
         return None
-    channel = bot.get_channel(LOG_CHANNEL_ID)
-    if channel is None:
+    ch = bot.get_channel(LOG_CHANNEL_ID)
+    if ch is None:
         try:
-            channel = await bot.fetch_channel(LOG_CHANNEL_ID)
-        except Exception:
+            ch = await bot.fetch_channel(LOG_CHANNEL_ID)
+        except:
             return None
-    return channel
+    return ch
 
 
-async def build_raw_log_from_channel(start_date: date | None, end_date: date | None) -> str:
-    """
-    Fetch messages from the log channel, filter them by created_at date (message timestamp),
-    and combine their content (including embeds & text attachments) into one big text blob.
-    """
+async def build_raw_log_from_channel(start_date, end_date):
     channel = await get_log_channel()
-    if channel is None:
+    if not channel:
         return ""
 
-    messages = []
-    async for msg in channel.history(limit=5000, oldest_first=True):
-        msg_date = msg.created_at.date()
-        if start_date and msg_date < start_date:
+    msgs = []
+    async for m in channel.history(limit=5000, oldest_first=True):
+        md = m.created_at.date()
+        if start_date and md < start_date:
             continue
-        if end_date and msg_date > end_date:
+        if end_date and md > end_date:
             continue
 
         parts = []
 
-        # 1) Normal text content
-        if msg.content:
-            parts.append(msg.content)
+        if m.content:
+            parts.append(m.content)
 
-        # 2) Embeds (common for log bots)
-        for embed in msg.embeds:
-            if embed.title:
-                parts.append(str(embed.title))
-            if embed.description:
-                parts.append(str(embed.description))
-            for field in embed.fields:
-                parts.append(f"{field.name}: {field.value}")
+        for e in m.embeds:
+            if e.title:
+                parts.append(e.title)
+            if e.description:
+                parts.append(e.description)
+            for f in e.fields:
+                parts.append(f"{f.name}: {f.value}")
 
-        # 3) Text attachments (.txt, .log)
-        for att in msg.attachments:
+        for att in m.attachments:
             if att.filename.lower().endswith((".txt", ".log")):
                 try:
                     data = await att.read()
-                    parts.append(data.decode("utf-8", errors="ignore"))
-                except Exception:
+                    parts.append(data.decode("utf-8"))
+                except:
                     pass
 
         if parts:
-            messages.append("\n".join(parts))
+            msgs.append("\n".join(parts))
 
-    return "\n".join(messages)
+    return "\n".join(msgs)
 
 
 # --------------------------------------------------------------------
-# BOT EVENTS & COMMANDS
+# DISCORD OUTPUT HELPERS
 # --------------------------------------------------------------------
 
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-
-
-def chunk_text(text: str, limit: int = 1800):
-    """
-    Yield <=limit-char chunks split on line boundaries.
-    (We keep a bit under 2000 to allow code fences.)
-    """
-    chunk = ""
-    for line in text.splitlines():
-        if len(chunk) + len(line) + 1 > limit:
-            yield chunk
-            chunk = ""
-        chunk += line + "\n"
-    if chunk:
-        yield chunk
+def chunk_text(text: str, limit=1800):
+    out = ""
+    for ln in text.splitlines():
+        if len(out) + len(ln) + 1 > limit:
+            yield out
+            out = ""
+        out += ln + "\n"
+    if out:
+        yield out
 
 
 async def send_pretty(ctx, text: str):
-    """
-    Send the text in one or more ```md code blocks for nicer formatting.
-    """
     for part in chunk_text(text):
         await ctx.send(f"```md\n{part.strip()}\n```")
 
 
-@bot.command(name="logsummary_all")
+# --------------------------------------------------------------------
+# COMMANDS
+# --------------------------------------------------------------------
+
+@bot.event
+async def on_ready():
+    print(f"✔ Logged in as {bot.user} (ID {bot.user.id})")
+
+
+@bot.command()
 async def logsummary_all(ctx):
-    """
-    Usage: !logsummary_all
-    Reads (up to limit) all messages from the log channel and summarizes them.
-    """
-    raw_log = await build_raw_log_from_channel(start_date=None, end_date=None)
-
-    id_to_name = {}
-    if ctx.guild:
-        id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
-
-    output = summarize_log(raw_log, id_to_name=id_to_name)
-    await send_pretty(ctx, output)
+    raw = await build_raw_log_from_channel(None, None)
+    id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+    out = summarize_log(raw, id_to_name)
+    await send_pretty(ctx, out)
 
 
-@bot.command(name="logsummary7")
-async def logsummary_last7(ctx):
-    """
-    Usage: !logsummary7
-    Reads from the log channel for the last 7 days and outputs the 4 tables.
-    """
+@bot.command()
+async def logsummary7(ctx):
     today = date.today()
     start = today - timedelta(days=7)
-
-    raw_log = await build_raw_log_from_channel(start_date=start, end_date=today)
-
-    id_to_name = {}
-    if ctx.guild:
-        id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
-
-    output = summarize_log(raw_log, id_to_name=id_to_name)
-    await send_pretty(ctx, output)
+    raw = await build_raw_log_from_channel(start, today)
+    id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+    out = summarize_log(raw, id_to_name)
+    await send_pretty(ctx, out)
 
 
-@bot.command(name="logsummary_range")
+@bot.command()
 async def logsummary_range(ctx, start_str: str, end_str: str):
-    """
-    Usage: !logsummary_range 2025-11-25 2025-11-27
-    Reads from the log channel for that date range.
-    """
     try:
         start = datetime.strptime(start_str, "%Y-%m-%d").date()
         end = datetime.strptime(end_str, "%Y-%m-%d").date()
-    except ValueError:
-        await ctx.send("Invalid date format. Use YYYY-MM-DD YYYY-MM-DD.")
-        return
+    except:
+        return await ctx.send("❌ Use format: `YYYY-MM-DD YYYY-MM-DD`")
 
-    raw_log = await build_raw_log_from_channel(start_date=start, end_date=end)
-
-    id_to_name = {}
-    if ctx.guild:
-        id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
-
-    output = summarize_log(raw_log, id_to_name=id_to_name)
-    await send_pretty(ctx, output)
+    raw = await build_raw_log_from_channel(start, end)
+    id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+    out = summarize_log(raw, id_to_name)
+    await send_pretty(ctx, out)
 
 
-@bot.command(name="logdebug_range")
+@bot.command()
 async def logdebug_range(ctx, start_str: str, end_str: str):
-    """
-    Debug command: shows how much raw log text we fetched,
-    a small preview, and what the parser sees (donation counts + tables).
-    Usage: !logdebug_range 2025-11-25 2025-11-27
-    """
     try:
         start = datetime.strptime(start_str, "%Y-%m-%d").date()
         end = datetime.strptime(end_str, "%Y-%m-%d").date()
-    except ValueError:
-        await ctx.send("Invalid date format. Use YYYY-MM-DD YYYY-MM-DD.")
-        return
+    except:
+        return await ctx.send("❌ Use format: `YYYY-MM-DD YYYY-MM-DD`")
 
-    raw_log = await build_raw_log_from_channel(start_date=start, end_date=end)
-    await ctx.send(f"Fetched {len(raw_log)} characters from log channel.")
+    raw = await build_raw_log_from_channel(start, end)
+    await ctx.send(f"Fetched {len(raw)} chars")
 
-    preview = raw_log[:800] or "(no text)"
+    preview = raw[:800] or "(no text)"
     await ctx.send(f"```text\n{preview}\n```")
 
-    donations, supplies, ledger = parse_log(raw_log)
+    donations, supplies, ledger = parse_log(raw)
     await ctx.send(
-        f"Parser results:\n"
-        f"Donations: {len(donations)}\n"
-        f"Supplies: {len(supplies)}\n"
-        f"Ledger entries: {len(ledger)}"
+        f"Parsed:\nDonations: {len(donations)}\nSupplies: {len(supplies)}\nLedger: {len(ledger)}"
     )
 
-    id_to_name = {}
-    if ctx.guild:
-        id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
-
-    tables = build_markdown_output(donations, supplies, ledger, id_to_name=id_to_name)
-    await send_pretty(ctx, tables)
+    id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
+    out = build_markdown_output(donations, supplies, ledger, id_to_name)
+    await send_pretty(ctx, out)
 
 
 # ---------------------------------------------------------------
-# Start bot
+# START BOT
 # ---------------------------------------------------------------
 bot.run(TOKEN)
