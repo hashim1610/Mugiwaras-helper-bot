@@ -231,10 +231,11 @@ def make_table(headers, rows, align_right=None):
 
 
 # --------------------------------------------------------------------
-# BUILD FINAL MARKDOWN OUTPUT (WITH COLORS & EMOJI)
+# BUILD FINAL MARKDOWN OUTPUT / SECTIONS
 # --------------------------------------------------------------------
 
-def build_markdown_output(donations, supplies, ledger, id_to_name=None):
+def _build_markdown_sections(donations, supplies, ledger, id_to_name=None):
+    """Internal helper: returns a list of 4 markdown sections as strings."""
     sections = []
 
     # Donations summary
@@ -255,7 +256,8 @@ def build_markdown_output(donations, supplies, ledger, id_to_name=None):
     total_mat = sum(v["total"] for v in donation_map.values())
 
     # 1) Donations table
-    sections.append("**🟥 Donations Breakdown Table Summary**")
+    sec1_lines = []
+    sec1_lines.append("**🟥 Donations Breakdown Table Summary**")
 
     donation_rows = [
         [
@@ -266,40 +268,46 @@ def build_markdown_output(donations, supplies, ledger, id_to_name=None):
         for name, stats in sorted_don
     ]
 
-    sections.append(
+    sec1_lines.append(
         make_table(
             ["Name", "Donations", "Total Materials Value"],
             donation_rows,
             align_right={1, 2}
         )
     )
+    sections.append("\n\n".join(sec1_lines))
 
     # 2) Overall Totals
-    sections.append("**🟦 Overall Totals**")
-    sections.append(
+    sec2_lines = []
+    sec2_lines.append("**🟦 Overall Totals**")
+    sec2_lines.append(
         make_table(
             ["Total Donations", "Total Materials Value"],
             [[total_count, f"{total_mat:.2f}"]],
             align_right={0, 1}
         )
     )
+    sections.append("\n\n".join(sec2_lines))
 
     # 3) Supplies
-    sections.append("**🟩 Supply Mission Summary**")
+    sec3_lines = []
+    sec3_lines.append("**🟩 Supply Mission Summary**")
     supply_rows = [
         [display_name_from_mention(s["name"], id_to_name), f"{s['amount']:.2f}"]
         for s in supplies
     ]
-    sections.append(
+    sec3_lines.append(
         make_table(
             ["Name", "Supplies Delivered"],
             supply_rows,
             align_right={1}
         )
     )
+    sections.append("\n\n".join(sec3_lines))
 
     # 4) Ledger
-    sections.append("**🟨 Ledger Transactions**")
+    sec4_lines = []
+    sec4_lines.append("**🟨 Ledger Transactions**")
     ledger_rows = []
     for l in ledger:
         base_name = display_name_from_mention(l["name"], id_to_name)
@@ -309,14 +317,21 @@ def build_markdown_output(donations, supplies, ledger, id_to_name=None):
             [base_name, transition, f"${l['amount']:.2f}"]
         )
 
-    sections.append(
+    sec4_lines.append(
         make_table(
             ["Name", "Transition", "Amount"],
             ledger_rows,
             align_right={2}
         )
     )
+    sections.append("\n\n".join(sec4_lines))
 
+    return sections
+
+
+def build_markdown_output(donations, supplies, ledger, id_to_name=None):
+    """Old behavior: single big markdown string (used by ! commands)."""
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
     return "\n\n".join(sections)
 
 
@@ -403,33 +418,27 @@ async def send_pretty(ctx, text: str):
         await ctx.send(f"```md\n{part.strip()}\n```")
 
 
-async def send_pretty_interaction(
+async def send_sections_interaction(
     interaction: discord.Interaction,
-    text: str,
+    sections,
     already_responded: bool = False,
 ):
     """
-    Same idea as send_pretty, but for slash commands.
-    If already_responded=True, send everything as followups.
+    Send up to 4 logical sections for slash commands.
+    Each section may still be chunked if it's huge, but it's grouped logically.
     """
-    chunks = list(chunk_text(text))
-    if not chunks:
-        if not already_responded:
-            await interaction.response.send_message("```md\n(no data)\n```")
-        else:
-            await interaction.followup.send("```md\n(no data)\n```")
-        return
+    first_send = not already_responded
 
-    if not already_responded:
-        # First message via initial response
-        await interaction.response.send_message(f"```md\n{chunks[0].strip()}\n```")
-        # Additional chunks via followups
-        for extra in chunks[1:]:
-            await interaction.followup.send(f"```md\n{extra.strip()}\n```")
-    else:
-        # Interaction response already used: everything as followups
-        for ch in chunks:
-            await interaction.followup.send(f"```md\n{ch.strip()}\n```")
+    for sec in sections:
+        if not sec.strip():
+            continue
+        for chunk in chunk_text(sec):
+            msg = f"```md\n{chunk.strip()}\n```"
+            if first_send:
+                await interaction.response.send_message(msg)
+                first_send = False
+            else:
+                await interaction.followup.send(msg)
 
 
 # --------------------------------------------------------------------
@@ -516,8 +525,9 @@ async def logsummary_all_slash(interaction: discord.Interaction):
     raw = await build_raw_log_from_channel(None, None)
     guild = interaction.guild
     id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
-    out = summarize_log(raw, id_to_name)
-    await send_pretty_interaction(interaction, out)
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    await send_sections_interaction(interaction, sections)
 
 
 @bot.tree.command(name="logsummary7", description="Summarize the last 7 days of logs")
@@ -527,8 +537,9 @@ async def logsummary7_slash(interaction: discord.Interaction):
     raw = await build_raw_log_from_channel(start, today)
     guild = interaction.guild
     id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
-    out = summarize_log(raw, id_to_name)
-    await send_pretty_interaction(interaction, out)
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    await send_sections_interaction(interaction, sections)
 
 
 @bot.tree.command(name="logsummary_range", description="Summarize logs between two dates")
@@ -555,8 +566,9 @@ async def logsummary_range_slash(
     raw = await build_raw_log_from_channel(start, end)
     guild = interaction.guild
     id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
-    out = summarize_log(raw, id_to_name)
-    await send_pretty_interaction(interaction, out)
+    donations, supplies, ledger = parse_log(raw)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
+    await send_sections_interaction(interaction, sections)
 
 
 @bot.tree.command(name="logdebug_range", description="Debug + summarize logs between two dates")
@@ -595,10 +607,10 @@ async def logdebug_range_slash(
 
     guild = interaction.guild
     id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
-    out = build_markdown_output(donations, supplies, ledger, id_to_name)
+    sections = _build_markdown_sections(donations, supplies, ledger, id_to_name)
 
-    # Now send the full pretty summary as followups (since we already responded)
-    await send_pretty_interaction(interaction, out, already_responded=True)
+    # Send the 4 logical report parts as followups (interaction already responded)
+    await send_sections_interaction(interaction, sections, already_responded=True)
 
 
 # ---------------------------------------------------------------
