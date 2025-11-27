@@ -403,21 +403,33 @@ async def send_pretty(ctx, text: str):
         await ctx.send(f"```md\n{part.strip()}\n```")
 
 
-async def send_pretty_interaction(interaction: discord.Interaction, text: str):
+async def send_pretty_interaction(
+    interaction: discord.Interaction,
+    text: str,
+    already_responded: bool = False,
+):
     """
     Same idea as send_pretty, but for slash commands.
+    If already_responded=True, send everything as followups.
     """
     chunks = list(chunk_text(text))
     if not chunks:
-        await interaction.response.send_message("```md\n(no data)\n```")
+        if not already_responded:
+            await interaction.response.send_message("```md\n(no data)\n```")
+        else:
+            await interaction.followup.send("```md\n(no data)\n```")
         return
 
-    # First message
-    await interaction.response.send_message(f"```md\n{chunks[0].strip()}\n```")
-
-    # Additional chunks
-    for extra in chunks[1:]:
-        await interaction.followup.send(f"```md\n{extra.strip()}\n```")
+    if not already_responded:
+        # First message via initial response
+        await interaction.response.send_message(f"```md\n{chunks[0].strip()}\n```")
+        # Additional chunks via followups
+        for extra in chunks[1:]:
+            await interaction.followup.send(f"```md\n{extra.strip()}\n```")
+    else:
+        # Interaction response already used: everything as followups
+        for ch in chunks:
+            await interaction.followup.send(f"```md\n{ch.strip()}\n```")
 
 
 # --------------------------------------------------------------------
@@ -460,10 +472,11 @@ async def logsummary7(ctx):
 @bot.command()
 async def logsummary_range(ctx, start_str: str, end_str: str):
     try:
-        start = datetime.strptime(start_str, "%Y-%m-%d").date()
-        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+        # DD-MM-YYYY format
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
     except:
-        return await ctx.send("❌ Use format: `YYYY-MM-DD YYYY-MM-DD`")
+        return await ctx.send("❌ Use format: `DD-MM-YYYY DD-MM-YYYY`")
 
     raw = await build_raw_log_from_channel(start, end)
     id_to_name = {str(m.id): m.display_name for m in ctx.guild.members}
@@ -474,10 +487,11 @@ async def logsummary_range(ctx, start_str: str, end_str: str):
 @bot.command()
 async def logdebug_range(ctx, start_str: str, end_str: str):
     try:
-        start = datetime.strptime(start_str, "%Y-%m-%d").date()
-        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+        # DD-MM-YYYY format
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
     except:
-        return await ctx.send("❌ Use format: `YYYY-MM-DD YYYY-MM-DD`")
+        return await ctx.send("❌ Use format: `DD-MM-YYYY DD-MM-YYYY`")
 
     raw = await build_raw_log_from_channel(start, end)
     await ctx.send(f"Fetched {len(raw)} chars")
@@ -519,8 +533,8 @@ async def logsummary7_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="logsummary_range", description="Summarize logs between two dates")
 @app_commands.describe(
-    start_str="Start date (YYYY-MM-DD)",
-    end_str="End date (YYYY-MM-DD)"
+    start_str="Start date (DD-MM-YYYY)",
+    end_str="End date (DD-MM-YYYY)"
 )
 async def logsummary_range_slash(
     interaction: discord.Interaction,
@@ -528,11 +542,12 @@ async def logsummary_range_slash(
     end_str: str
 ):
     try:
-        start = datetime.strptime(start_str, "%Y-%m-%d").date()
-        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+        # DD-MM-YYYY
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
     except:
         await interaction.response.send_message(
-            "❌ Use format: `YYYY-MM-DD` for both dates.",
+            "❌ Use format: `DD-MM-YYYY` for both dates.",
             ephemeral=True
         )
         return
@@ -546,8 +561,8 @@ async def logsummary_range_slash(
 
 @bot.tree.command(name="logdebug_range", description="Debug + summarize logs between two dates")
 @app_commands.describe(
-    start_str="Start date (YYYY-MM-DD)",
-    end_str="End date (YYYY-MM-DD)"
+    start_str="Start date (DD-MM-YYYY)",
+    end_str="End date (DD-MM-YYYY)"
 )
 async def logdebug_range_slash(
     interaction: discord.Interaction,
@@ -555,11 +570,12 @@ async def logdebug_range_slash(
     end_str: str
 ):
     try:
-        start = datetime.strptime(start_str, "%Y-%m-%d").date()
-        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+        # DD-MM-YYYY
+        start = datetime.strptime(start_str, "%d-%m-%Y").date()
+        end = datetime.strptime(end_str, "%d-%m-%Y").date()
     except:
         await interaction.response.send_message(
-            "❌ Use format: `YYYY-MM-DD` for both dates.",
+            "❌ Use format: `DD-MM-YYYY` for both dates.",
             ephemeral=True
         )
         return
@@ -580,7 +596,9 @@ async def logdebug_range_slash(
     guild = interaction.guild
     id_to_name = {str(m.id): m.display_name for m in guild.members} if guild else {}
     out = build_markdown_output(donations, supplies, ledger, id_to_name)
-    await send_pretty_interaction(interaction, out)
+
+    # Now send the full pretty summary as followups (since we already responded)
+    await send_pretty_interaction(interaction, out, already_responded=True)
 
 
 # ---------------------------------------------------------------
