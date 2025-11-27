@@ -1,155 +1,158 @@
-🎣 MUGIWARAS LOG SUMMONER
-The funky Discord bot that turns boring clan logs into juicy, beautiful summaries.
+Here you go — **a complete, ready-to-copy `README.md` file**, perfectly formatted for GitHub.
+Just copy–paste this directly into your repo.
+
+---
+
+# 🎣 **MUGIWARAS LOG SUMMONER**
+
+### *The funky Discord bot that turns boring clan logs into juicy, beautiful summaries.*
+
 <div align="center">
+
+```
        __  __           _         _                           
       |  \/  | ___   __| | ___   / \    _ __   __ _ _ __ ___  
       | |\/| |/ _ \ / _` |/ _ \ / _ \  | '_ \ / _` | '_ ` _ \ 
       | |  | | (_) | (_| |  __// ___ \ | |_) | (_| | | | | | |
       |_|  |_|\___/ \__,_|\___/_/   \_\| .__/ \__,_|_| |_| |_|
                                         |_|                   
+```
 
-🌐 Automatically extracts & summarizes:
+🌐 **Automatically extracts & summarizes:**
 
-🦌 Animal Donations
+* 🦌 Animal Donations
+* 📦 Supply Missions
+* 💰 Ledger Transactions
+* 👤 Per-user donation counts & totals
 
-📦 Supply Missions
-
-💰 Ledger Transactions
-
-🎯 Per-user totals, materials, counts & more
-
-✨ Supports real Discord mentions (@DisplayName)
-✨ Beautifully aligned Markdown tables
-✨ Parses logs from any bot that outputs “Materials added: X”
+✨ **Supports real @DisplayName mentions**
+✨ **Beautiful, aligned Markdown tables**
+✨ **Fully automated clan log reporting**
 
 </div>
-🚀 Features
-🧩 Smart Log Parsing
 
-Detects donations, supply missions, and ledger activity
+---
 
-Reads logs from text, embeds, .txt/.log files
+## 🚀 Features
 
-Ignores junk, separators, and malformed log entries
+### 🧩 Smart Log Parsing
 
-Fully understands your 4-line log format
+* Detects **donations**, **supplies**, and **ledger** entries
+* Supports log bots producing **4-line log blocks**
+* Extracts Materials, Supplies, Ledger amounts
+* Cleans & normalizes weird data formats
 
-💎 Beautiful Output
+### 💎 Beautiful Output
 
-Automatically generates clean Markdown:
+Every summary is printed as a clean, padded, Markdown table:
 
+````md
 ```md
 **Donations Breakdown Table Summary**
 
-| Name                   | Donations | Total Materials Value |
-| ---------------------- | --------- | --------------------- |
-| @Gamer_anz             |        68 |                163.20 |
-| @Freddy Fenix [Manager]|        28 |                 66.10 |
+| Name                         | Donations | Total Materials Value |
+| ---------------------------- | --------- | --------------------- |
+| @Gamer_anz                   |        68 |                163.20 |
+| @Freddy Fenix [Manager]      |        28 |                 66.10 |
+| @RACCOON                     |        24 |                 51.75 |
 ```
+````
 
-🧠 Smart Mention Resolver
+### 🧠 Mention Resolver
 
-Turns this:
+* Converts `<@123456789>` → `@DisplayName`
+* Removes trailing numeric IDs from log sources
+* Filters out junk like `@--------------`
 
-<@1116155335854534766>
+### 📅 Flexible Commands
 
+| Command                                   | Description                       |
+| ----------------------------------------- | --------------------------------- |
+| `!logsummary7`                            | Summaries for the last 7 days     |
+| `!logsummary_all`                         | Use all messages from log channel |
+| `!logsummary_range YYYY-MM-DD YYYY-MM-DD` | Custom date range                 |
+| `!logdebug_range`                         | See raw logs + parser output      |
 
-into:
+---
 
-@Freddy Fenix [Manager]
+## 🔧 How It Works
 
+1. Bot reads messages from your log channel
+2. Extracts donation/supply/ledger data
+3. Resolves Discord IDs → display names
+4. Generates **four clean summary tables** in strict order:
 
-…using server member lookup.
+   1. Donations Breakdown Table Summary
+   2. Overall Totals
+   3. Supply Mission Summary
+   4. Ledger Transactions
 
-📅 Flexible Commands
-Command	Description
-!logsummary7	Summary of last 7 days
-!logsummary_all	Full log summary (up to 5000 messages)
-!logsummary_range YYYY-MM-DD YYYY-MM-DD	Custom date range
-!logdebug_range YYYY-MM-DD YYYY-MM-DD	Debug raw log + parser
-🔧 How It Works
-1️⃣ Reads messages from your log channel
+No extra text. No garbage. Just clean data.
 
-Includes:
+---
 
-Text
+## 🛠️ Setup
 
-Embeds
+### 1️⃣ Enable Discord Bot Intents
 
-Attachments
+Go to **Discord Developer Portal → Bot** and enable:
 
-Multi-line logs
+* ☑ **MESSAGE CONTENT INTENT**
+* ☑ **SERVER MEMBERS INTENT**
 
-2️⃣ Extracts structured data
+### 2️⃣ Add environment variables
 
-Donations (Materials added: X)
-
-Supply Missions (Delivered Supplies: X)
-
-Ledger deposits/withdrawals ($X)
-
-3️⃣ Maps Discord IDs → Display Names
-
-Uses privileged intents for full accuracy.
-
-4️⃣ Outputs exactly four tables:
-
-Donations Breakdown Table Summary
-
-Overall Totals
-
-Supply Mission Summary
-
-Ledger Transactions
-
-(As required — no extra fluff.)
-
-🛠️ Setup
-🔐 1. Enable Bot Intents
-
-Go to Developer Portal → Your Bot → Bot:
-
-Turn ON:
-
-☑ SERVER MEMBERS INTENT
-
-☑ MESSAGE CONTENT INTENT
-
-⚙️ 2. Environment Variables
+```
 TOKEN=your_discord_bot_token
 LOG_CHANNEL_ID=123456789012345678
+```
 
-🚀 3. Deploy
+### 3️⃣ Deploy on…
 
-Use:
+* Railway
+* Docker
+* VPS
+* Local PC
+* A potato (if it runs Python)
 
-Railway (recommended)
+---
 
-Docker
+## 📘 Example Usage
 
-Local Python
-
-The bot boots instantly and begins answering commands.
-
-🎮 Usage Examples
-!logsummary7
-
+```
 !logsummary_range 2025-11-24 2025-11-27
+```
 
-!logsummary_all
+or
 
-🌈 Why This Bot Slaps
+```
+!logsummary7
+```
 
-✨ Premium-looking output
+---
 
-🔥 Fast & reliable
+## 🌈 Why This Bot Slaps
 
-🧼 Sanitizes odd log formatting
+* Cleanest log summaries in the seven seas 🏴‍☠️
+* Fast, accurate, and aesthetically pleasing
+* Handles all your clan bookkeeping
+* Leaders love it
+* Users love seeing their pretty @names
 
-🧠 Smart name detection
+---
 
-💯 Saves clan leaders hours of manual counting
+## 🏴‍☠️ Built for **MUGIWARAS**
 
-🏴‍☠️ Made for MUGIWARAS
+*“Because pirates deserve clean spreadsheets too.”*
 
-“Because even pirates deserve clean spreadsheets.”
+---
+
+If you want, I can also generate:
+
+* A matching **logo**
+* A **badge section** (Python version, Railway CI, License, etc.)
+* A **screenshots** section
+* A **fancy animated banner**
+* A **Dockerfile** or **Railway template repo**
+
+Just tell me.
