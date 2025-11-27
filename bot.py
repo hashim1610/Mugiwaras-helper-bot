@@ -36,95 +36,86 @@ def normalize_number(num_str: str) -> float:
 
 def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
     """
-    Clean up the "Discord: ..." content into an @tag-like name.
+    Clean up the "Discord: ..." content into a usable name/mention.
 
-    Handles cases like:
-    - "@Gamer_anz 1119993751092334622"          -> "@Gamer_anz"
-    - "@Freddy Fenix [Manager] 123456"         -> "@Freddy Fenix [Manager]"
-    - "@**Freddy Fenix [Manager]** 123456"     -> "@Freddy Fenix [Manager]"
-    - "<@1119993751092334622>" + next line "Gamer_Anz" -> "@Gamer_Anz"
-    - "Gamer_Anz"                              -> "@Gamer_Anz"
-    - Very long dash-only names                -> "@Unknown"
+    Priority:
+    1) If we can see an ID (like ... 1116155335854534766), use it to form <@ID>
+    2) If there's a raw mention <@ID>, keep <@ID>
+    3) Otherwise fall back to a text '@Name'
+    4) If the 'name' is just a long row of dashes/underscores, ignore it
     """
-    # Basic cleanup: strip whitespace and markdown
+    import re
+
     s = discord_part.strip()
     if not s:
         return None
 
+    # Remove markdown clutter
     s = s.replace("**", "").replace("`", "").strip()
 
-    # Case 1: raw mention <@...> or <@!...>
-    if s.startswith("<@"):
-        # Try to read visible name on next non-empty line
-        visible = None
-        for k in range(idx + 1, min(idx + 4, len(lines))):
-            candidate = lines[k].strip()
-            if candidate:
-                visible = candidate
-                break
-        if visible:
-            visible = visible.replace("**", "").replace("`", "").strip()
-            tokens = visible.split()
-            # Drop trailing numeric ID if present
-            if tokens and tokens[-1].isdigit():
-                tokens = tokens[:-1]
-            if not tokens:
-                return "@Unknown"
-            if not tokens[0].startswith("@"):
-                tokens[0] = "@" + tokens[0].lstrip("@")
-            name = " ".join(tokens)
-        else:
-            # Fallback: keep mention as-is
-            name = s
-    else:
-        # Try to start at the first '@' if present
-        at_pos = s.find("@")
-        if at_pos != -1:
-            candidate = s[at_pos:]
-        else:
-            candidate = s
+    # --- Case 1: raw mention <@...> or <@!...> in this line ---
+    m = re.search(r"<@!?(\d+)>", s)
+    if m:
+        user_id = m.group(1)
+        return f"<@{user_id}>"
 
-        candidate = candidate.strip()
-        tokens = candidate.split()
+    # --- Case 2: trailing numeric ID token in this line ---
+    tokens = s.split()
+    if tokens and tokens[-1].isdigit():
+        user_id = tokens[-1]
+        return f"<@{user_id}>"
 
-        # Drop trailing numeric ID if present
-        if tokens and tokens[-1].isdigit():
-            tokens = tokens[:-1]
+    # --- Case 3: look at a couple of next lines for an ID or mention ---
+    for k in range(idx + 1, min(idx + 4, len(lines))):
+        candidate = lines[k].strip()
+        if not candidate:
+            continue
+        candidate = candidate.replace("**", "").replace("`", "").strip()
 
-        if not tokens:
-            # Try next line as backup
-            for k in range(idx + 1, min(idx + 4, len(lines))):
-                candidate2 = lines[k].strip()
-                if candidate2:
-                    candidate2 = candidate2.replace("**", "").replace("`", "").strip()
-                    tokens2 = candidate2.split()
-                    if tokens2 and tokens2[-1].isdigit():
-                        tokens2 = tokens2[:-1]
-                    if not tokens2:
-                        continue
-                    if not tokens2[0].startswith("@"):
-                        tokens2[0] = "@" + tokens2[0].lstrip("@")
-                    name = " ".join(tokens2)
-                    break
-            else:
-                name = "@Unknown"
-        else:
-            if not tokens[0].startswith("@"):
-                tokens[0] = "@" + tokens[0].lstrip("@")
-            name = " ".join(tokens)
+        # raw mention in next line
+        m2 = re.search(r"<@!?(\d+)>", candidate)
+        if m2:
+            return f"<@{m2.group(1)}>"
 
-    # Final clean: remove any trailing numeric ID again, just in case
-    parts = name.split()
-    if len(parts) > 1 and parts[-1].isdigit():
-        parts = parts[:-1]
+        parts = candidate.split()
+        if parts and parts[-1].isdigit():
+            return f"<@{parts[-1]}>"
+
+        # fallback text name from next line
+        if parts:
+            name = parts[0]
+            if not name.startswith("@"):
+                name = "@" + name.lstrip("@")
+            # avoid junk-only dashed names
+            core = name.lstrip("@").strip()
+            if core and all(ch in "-_" for ch in core) and len(core) > 5:
+                continue
+            return name
+
+    # --- Case 4: fallback to text name from this line ---
+    # Try to start at first '@' if present
+    at_pos = s.find("@")
+    candidate = s[at_pos:] if at_pos != -1 else s
+    candidate = candidate.strip()
+    parts = candidate.split()
+    if not parts:
+        return None
+
+    if not parts[0].startswith("@"):
+        parts[0] = "@" + parts[0].lstrip("@")
     name = " ".join(parts)
 
-    # If the name after @ is just a long run of - or _, treat as Unknown
+    # Remove trailing numeric ID if somehow still there
+    parts2 = name.split()
+    if len(parts2) > 1 and parts2[-1].isdigit():
+        parts2 = parts2[:-1]
+    name = " ".join(parts2).strip()
+
     core = name.lstrip("@").strip()
     if core and all(ch in "-_" for ch in core) and len(core) > 5:
-        return "@Unknown"
+        return None
 
-    return name or "@Unknown"
+    return name or None
 
 
 def extract_number_after_marker(text: str, marker: str) -> float | None:
