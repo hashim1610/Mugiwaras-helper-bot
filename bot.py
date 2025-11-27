@@ -5,8 +5,12 @@ from datetime import datetime, date, timedelta
 import discord
 from discord.ext import commands
 
-TOKEN = os.getenv("TOKEN")
-LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))  # set this in Railway
+# --------------------------------------------------------------------
+# CONFIG
+# --------------------------------------------------------------------
+
+TOKEN = os.getenv("TOKEN")  # set in Railway
+LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))  # set in Railway
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -14,7 +18,9 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-# ---------- Pure parsing helpers (same logic as before) ----------
+# --------------------------------------------------------------------
+# PARSING HELPERS
+# --------------------------------------------------------------------
 
 def strip_code_block(text: str) -> str:
     text = text.strip()
@@ -38,6 +44,9 @@ def find_discord_name(lines, start_index):
     """
     From start_index forward, find the first 'Discord:' line and extract name:
     keep visible name + roles, drop '@' and numeric ID.
+
+    Example:
+    'Discord: @Freddy Fenix [Manager] 1116...' -> 'Freddy Fenix [Manager]'
     """
     for i in range(start_index, len(lines)):
         line = lines[i].strip()
@@ -58,7 +67,7 @@ def parse_log(raw_log: str):
     """
     Parse the raw clan log text and return three lists:
     donations, supplies, ledger.
-    Each element has 'name', 'value' fields and optional 'date'.
+    Each element has 'name', numeric fields, and optional 'date'.
     """
     lines = raw_log.splitlines()
     current_date = None
@@ -132,7 +141,7 @@ def parse_log(raw_log: str):
     return donations, supplies, ledger
 
 
-def filter_by_date(items, start_date: date | None, end_date: date | None):
+def filter_by_date(items, start_date, end_date):
     """Filter list of dicts with optional 'date' field by date range."""
     if start_date is None and end_date is None:
         return items
@@ -140,7 +149,7 @@ def filter_by_date(items, start_date: date | None, end_date: date | None):
     for item in items:
         d = item.get("date")
         if d is None:
-            # If no explicit date in log line, keep it (adjust if you prefer skipping)
+            # If no explicit date in log line, keep it (change to skip if you prefer)
             filtered.append(item)
             continue
         if start_date is not None and d < start_date:
@@ -189,7 +198,7 @@ def build_markdown_output(donations, supplies, ledger):
         lines.append(
             f"| {name} | {stats['count']} | {stats['total']:.2f} |"
         )
-    lines.append("")
+    lines.append("")  # blank line after table
 
     # 2) Overall Totals
     lines.append("Overall Totals")
@@ -221,7 +230,7 @@ def build_markdown_output(donations, supplies, ledger):
     return "\n".join(lines)
 
 
-def summarize_log(raw_log: str, start_date: date | None = None, end_date: date | None = None) -> str:
+def summarize_log(raw_log: str, start_date=None, end_date=None) -> str:
     raw_log = strip_code_block(raw_log)
     donations, supplies, ledger = parse_log(raw_log)
 
@@ -232,14 +241,15 @@ def summarize_log(raw_log: str, start_date: date | None = None, end_date: date |
     return build_markdown_output(donations, supplies, ledger)
 
 
-# ---------- Fetch logs from the Camp-Activity-Logs channel ----------
+# --------------------------------------------------------------------
+# DISCORD CHANNEL READING
+# --------------------------------------------------------------------
 
 async def get_log_channel():
     if LOG_CHANNEL_ID == 0:
         return None
     channel = bot.get_channel(LOG_CHANNEL_ID)
     if channel is None:
-        # Try fetching if not cached
         try:
             channel = await bot.fetch_channel(LOG_CHANNEL_ID)
         except Exception:
@@ -247,85 +257,73 @@ async def get_log_channel():
     return channel
 
 
-async def build_raw_log_from_channel(start_date: date | None, end_date: date | None) -> str:
+async def build_raw_log_from_channel(start_date=None, end_date=None) -> str:
     """
     Fetch messages from the log channel, filter them by created_at date,
-    and combine their content into one big text blob.
+    and combine their content (including embeds & text attachments)
+    into one big text blob.
     """
     channel = await get_log_channel()
     if channel is None:
         return ""
 
     messages = []
-    # Limit to some reasonable number to avoid huge history; adjust as needed
     async for msg in channel.history(limit=5000, oldest_first=True):
         msg_date = msg.created_at.date()
         if start_date and msg_date < start_date:
             continue
         if end_date and msg_date > end_date:
             continue
-        if msg.content:
-            messages.append(msg.content)
 
-    # Combine all message contents with newlines so the parser can treat it like one big log file
+        parts = []
+
+        # 1) Normal text content
+        if msg.content:
+            parts.append(msg.content)
+
+        # 2) Embeds (common for log bots)
+        for embed in msg.embeds:
+            if embed.title:
+                parts.append(str(embed.title))
+            if embed.description:
+                parts.append(str(embed.description))
+            for field in embed.fields:
+                parts.append(f"{field.name}: {field.value}")
+
+        # 3) Text attachments (.txt, .log)
+        for att in msg.attachments:
+            if att.filename.lower().endswith((".txt", ".log")):
+                try:
+                    data = await att.read()
+                    parts.append(data.decode("utf-8", errors="ignore"))
+                except Exception:
+                    pass
+
+        if parts:
+            messages.append("\n".join(parts))
+
     return "\n".join(messages)
 
 
-# ---------- Bot events & commands ----------
+# --------------------------------------------------------------------
+# BOT EVENTS & COMMANDS
+# --------------------------------------------------------------------
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
 
-def send_in_chunks(text: str):
-    """Generator that yields <=1900-char chunks split on line boundaries."""
+def chunk_text(text: str, limit: int = 1900):
+    """Yield <=limit-char chunks split on line boundaries."""
     chunk = ""
     for line in text.splitlines():
-        if len(chunk) + len(line) + 1 > 1900:
+        if len(chunk) + len(line) + 1 > limit:
             yield chunk
             chunk = ""
         chunk += line + "\n"
     if chunk:
         yield chunk
-
-
-@bot.command(name="logsummary7")
-async def logsummary_last7(ctx):
-    """
-    Usage: !logsummary7
-    Reads from the Camp-Activity-Logs channel for the last 7 days
-    and outputs only the 4 markdown tables.
-    """
-    today = date.today()
-    start = today - timedelta(days=7)
-
-    raw_log = await build_raw_log_from_channel(start_date=start, end_date=today)
-    output = summarize_log(raw_log, start_date=start, end_date=today)
-
-    for chunk in send_in_chunks(output):
-        await ctx.send(chunk)
-
-
-@bot.command(name="logsummary_range")
-async def logsummary_range(ctx, start_str: str, end_str: str):
-    """
-    Usage: !logsummary_range 2025-11-20 2025-11-27
-    Reads from the Camp-Activity-Logs channel for that date range.
-    """
-    try:
-        start = datetime.strptime(start_str, "%Y-%m-%d").date()
-        end = datetime.strptime(end_str, "%Y-%m-%d").date()
-    except ValueError:
-        # This reply breaks the "no extra text" rule, but only in error cases.
-        await ctx.send("Invalid date format. Use YYYY-MM-DD YYYY-MM-DD.")
-        return
-
-    raw_log = await build_raw_log_from_channel(start_date=start, end_date=end)
-    output = summarize_log(raw_log, start_date=start, end_date=end)
-
-    for chunk in send_in_chunks(output):
-        await ctx.send(chunk)
 
 
 @bot.command(name="logsummary_all")
@@ -337,8 +335,63 @@ async def logsummary_all(ctx):
     raw_log = await build_raw_log_from_channel(start_date=None, end_date=None)
     output = summarize_log(raw_log)
 
-    for chunk in send_in_chunks(output):
-        await ctx.send(chunk)
+    for part in chunk_text(output):
+        await ctx.send(part)
+
+
+@bot.command(name="logsummary7")
+async def logsummary_last7(ctx):
+    """
+    Usage: !logsummary7
+    Reads from the log channel for the last 7 days and outputs the 4 tables.
+    """
+    today = date.today()
+    start = today - timedelta(days=7)
+
+    raw_log = await build_raw_log_from_channel(start_date=start, end_date=today)
+    output = summarize_log(raw_log, start_date=start, end_date=today)
+
+    for part in chunk_text(output):
+        await ctx.send(part)
+
+
+@bot.command(name="logsummary_range")
+async def logsummary_range(ctx, start_str: str, end_str: str):
+    """
+    Usage: !logsummary_range 2025-11-25 2025-11-27
+    Reads from the log channel for that date range.
+    """
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d").date()
+        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+    except ValueError:
+        await ctx.send("Invalid date format. Use YYYY-MM-DD YYYY-MM-DD.")
+        return
+
+    raw_log = await build_raw_log_from_channel(start_date=start, end_date=end)
+    output = summarize_log(raw_log, start_date=start, end_date=end)
+
+    for part in chunk_text(output):
+        await ctx.send(part)
+
+
+@bot.command(name="logdebug_range")
+async def logdebug_range(ctx, start_str: str, end_str: str):
+    """
+    Debug command: shows how much raw log text we fetched and a small preview.
+    Usage: !logdebug_range 2025-11-25 2025-11-27
+    """
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d").date()
+        end = datetime.strptime(end_str, "%Y-%m-%d").date()
+    except ValueError:
+        await ctx.send("Invalid date format. Use YYYY-MM-DD YYYY-MM-DD.")
+        return
+
+    raw_log = await build_raw_log_from_channel(start_date=start, end_date=end)
+    await ctx.send(f"Fetched {len(raw_log)} characters from log channel.")
+    preview = raw_log[:800] or "(no text)"
+    await ctx.send(f"Preview:\n```{preview}```")
 
 
 bot.run(TOKEN)
