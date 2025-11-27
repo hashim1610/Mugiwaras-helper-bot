@@ -38,17 +38,21 @@ def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
     """
     Clean up the "Discord: ..." content into an @tag-like name.
 
-    Examples:
-    - '@Gamer_anz 1119993751092334622' -> '@Gamer_anz'
-    - '@Freddy Fenix [Manager] 123456' -> '@Freddy Fenix [Manager]'
-    - '<@1119993751092334622>' + next line 'Gamer_Anz' -> '@Gamer_Anz'
-    - 'Gamer_Anz' -> '@Gamer_Anz'
+    Handles cases like:
+    - "@Gamer_anz 1119993751092334622"          -> "@Gamer_anz"
+    - "@Freddy Fenix [Manager] 123456"         -> "@Freddy Fenix [Manager]"
+    - "@**Freddy Fenix [Manager]** 123456"     -> "@Freddy Fenix [Manager]"
+    - "<@1119993751092334622>" + next line "Gamer_Anz" -> "@Gamer_Anz"
+    - "Gamer_Anz"                              -> "@Gamer_Anz"
     """
+    # Basic cleanup: strip whitespace and markdown bold/backticks
     s = discord_part.strip()
     if not s:
         return None
 
-    # Case: raw mention <@...>
+    s = s.replace("**", "").replace("`", "").strip()
+
+    # Case 1: raw mention <@...> or <@!...>
     if s.startswith("<@"):
         # Try to read visible name on next non-empty line
         visible = None
@@ -58,23 +62,38 @@ def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
                 visible = candidate
                 break
         if visible:
+            visible = visible.replace("**", "").replace("`", "").strip()
             if not visible.startswith("@"):
                 visible = "@" + visible
             return visible
-        return s  # fallback: keep mention as-is
+        # Fallback: just keep the mention as-is
+        return s
 
-    # Case: starts with @Name ...
-    if s.startswith("@"):
-        parts = s.split()
-        if len(parts) > 1 and parts[-1].isdigit():
-            parts = parts[:-1]  # drop numeric ID at end
-        return " ".join(parts)
+    # From here on, we try to pull something starting at the first '@'
+    at_pos = s.find("@")
+    if at_pos != -1:
+        after_at = s[at_pos + 1 :].strip()  # text after '@'
+        if after_at:
+            tokens = after_at.split()
+            # If last token is numeric ID, drop it
+            if tokens and tokens[-1].isdigit():
+                tokens = tokens[:-1]
+            if tokens:
+                name_core = " ".join(tokens)
+                return "@" + name_core
 
-    # Otherwise, just treat first token as name and prefix @
-    base = s.split()[0]
-    if not base.startswith("@"):
-        base = "@" + base
-    return base
+    # If we didn't manage to get a name from the line, try the next line
+    for k in range(idx + 1, min(idx + 4, len(lines))):
+        candidate = lines[k].strip()
+        if candidate:
+            candidate = candidate.replace("**", "").replace("`", "").strip()
+            if not candidate.startswith("@"):
+                candidate = "@" + candidate
+            return candidate
+
+    # Last-resort fallback
+    return "@Unknown"
+
 
 
 def extract_number_after_marker(text: str, marker: str) -> float | None:
@@ -444,3 +463,4 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
 
 
 bot.run(TOKEN)
+
