@@ -44,8 +44,9 @@ def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
     - "@**Freddy Fenix [Manager]** 123456"     -> "@Freddy Fenix [Manager]"
     - "<@1119993751092334622>" + next line "Gamer_Anz" -> "@Gamer_Anz"
     - "Gamer_Anz"                              -> "@Gamer_Anz"
+    - Very long dash-only names                -> "@Unknown"
     """
-    # Basic cleanup: strip whitespace and markdown bold/backticks
+    # Basic cleanup: strip whitespace and markdown
     s = discord_part.strip()
     if not s:
         return None
@@ -63,37 +64,67 @@ def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
                 break
         if visible:
             visible = visible.replace("**", "").replace("`", "").strip()
-            if not visible.startswith("@"):
-                visible = "@" + visible
-            return visible
-        # Fallback: just keep the mention as-is
-        return s
-
-    # From here on, we try to pull something starting at the first '@'
-    at_pos = s.find("@")
-    if at_pos != -1:
-        after_at = s[at_pos + 1 :].strip()  # text after '@'
-        if after_at:
-            tokens = after_at.split()
-            # If last token is numeric ID, drop it
+            tokens = visible.split()
+            # Drop trailing numeric ID if present
             if tokens and tokens[-1].isdigit():
                 tokens = tokens[:-1]
-            if tokens:
-                name_core = " ".join(tokens)
-                return "@" + name_core
+            if not tokens:
+                return "@Unknown"
+            if not tokens[0].startswith("@"):
+                tokens[0] = "@" + tokens[0].lstrip("@")
+            name = " ".join(tokens)
+        else:
+            # Fallback: keep mention as-is
+            name = s
+    else:
+        # Try to start at the first '@' if present
+        at_pos = s.find("@")
+        if at_pos != -1:
+            candidate = s[at_pos:]
+        else:
+            candidate = s
 
-    # If we didn't manage to get a name from the line, try the next line
-    for k in range(idx + 1, min(idx + 4, len(lines))):
-        candidate = lines[k].strip()
-        if candidate:
-            candidate = candidate.replace("**", "").replace("`", "").strip()
-            if not candidate.startswith("@"):
-                candidate = "@" + candidate
-            return candidate
+        candidate = candidate.strip()
+        tokens = candidate.split()
 
-    # Last-resort fallback
-    return "@Unknown"
+        # Drop trailing numeric ID if present
+        if tokens and tokens[-1].isdigit():
+            tokens = tokens[:-1]
 
+        if not tokens:
+            # Try next line as backup
+            for k in range(idx + 1, min(idx + 4, len(lines))):
+                candidate2 = lines[k].strip()
+                if candidate2:
+                    candidate2 = candidate2.replace("**", "").replace("`", "").strip()
+                    tokens2 = candidate2.split()
+                    if tokens2 and tokens2[-1].isdigit():
+                        tokens2 = tokens2[:-1]
+                    if not tokens2:
+                        continue
+                    if not tokens2[0].startswith("@"):
+                        tokens2[0] = "@" + tokens2[0].lstrip("@")
+                    name = " ".join(tokens2)
+                    break
+            else:
+                name = "@Unknown"
+        else:
+            if not tokens[0].startswith("@"):
+                tokens[0] = "@" + tokens[0].lstrip("@")
+            name = " ".join(tokens)
+
+    # Final clean: remove any trailing numeric ID again, just in case
+    parts = name.split()
+    if len(parts) > 1 and parts[-1].isdigit():
+        parts = parts[:-1]
+    name = " ".join(parts)
+
+    # If the name after @ is just a long run of - or _, treat as Unknown
+    core = name.lstrip("@").strip()
+    if core and all(ch in "-_" for ch in core) and len(core) > 5:
+        return "@Unknown"
+
+    return name or "@Unknown"
 
 
 def extract_number_after_marker(text: str, marker: str) -> float | None:
@@ -251,7 +282,7 @@ def build_markdown_output(donations, supplies, ledger):
     lines = []
 
     # 1) Donations Breakdown Table Summary
-    lines.append("Donations Breakdown Table Summary")
+    lines.append("**Donations Breakdown Table Summary**")
     lines.append("| Name | Donations | Total Materials Value |")
     lines.append("| --- | ---: | ---: |")
     for name, stats in sorted_donations:
@@ -261,14 +292,14 @@ def build_markdown_output(donations, supplies, ledger):
     lines.append("")  # blank line after table
 
     # 2) Overall Totals
-    lines.append("Overall Totals")
+    lines.append("**Overall Totals**")
     lines.append("| Total Donations | Total Materials Value |")
     lines.append("| ---: | ---: |")
     lines.append(f"| {total_donation_count} | {total_materials_sum:.2f} |")
     lines.append("")
 
     # 3) Supply Mission Summary
-    lines.append("Supply Mission Summary")
+    lines.append("**Supply Mission Summary**")
     lines.append("| Name | Supplies Delivered |")
     lines.append("| --- | ---: |")
     for s in supplies:
@@ -278,7 +309,7 @@ def build_markdown_output(donations, supplies, ledger):
     lines.append("")
 
     # 4) Ledger Transactions
-    lines.append("Ledger Transactions")
+    lines.append("**Ledger Transactions**")
     lines.append("| Name | Transition | Amount |")
     lines.append("| --- | --- | ---: |")
     for l in ledger:
@@ -463,4 +494,3 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
 
 
 bot.run(TOKEN)
-
