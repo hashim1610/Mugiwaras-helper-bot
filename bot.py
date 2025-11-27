@@ -256,25 +256,14 @@ def build_markdown_output(donations, supplies, ledger, id_to_name=None):
     # 1) Donations table
     sections.append("**🟥 Donations Breakdown Table Summary**")
 
-    donation_rows = []
-    for idx, (name, stats) in enumerate(sorted_don):
-        disp = display_name_from_mention(name, id_to_name)
-
-        # ---- Medal assignment ----
-        medal = ""
-        if idx == 0:
-            medal = "🥇 "
-        elif idx == 1:
-            medal = "🥈 "
-        elif idx == 2:
-            medal = "🥉 "
-
-        donation_rows.append([
-            f"{medal}{disp}",
+    donation_rows = [
+        [
+            display_name_from_mention(name, id_to_name),
             stats["count"],
             f"{stats['total']:.2f}",
-    ])
-
+        ]
+        for name, stats in sorted_don
+    ]
 
     sections.append(
         make_table(
