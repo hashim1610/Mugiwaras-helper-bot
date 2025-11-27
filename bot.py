@@ -29,6 +29,14 @@ def strip_code_block(text: str) -> str:
     return text
 
 
+def normalize_number(num_str: str) -> float:
+    """
+    Turn '3.5' or '3,5' into float(3.5).
+    """
+    num_str = num_str.strip().replace(",", ".")
+    return float(num_str)
+
+
 def find_discord_name(lines, start_index):
     """
     Extracts user name with @tag retained.
@@ -90,12 +98,16 @@ def parse_log(raw_log: str):
         stripped = line.strip()
 
         # ----- Donations -----
-        if "Donated" in stripped and "Materials added" in stripped:
-            # Be tolerant about spaces/colon
-            m = re.search(r"Materials added[:\s]*([0-9]+(?:\.[0-9]+)?)", stripped)
+        if "Donated" in stripped and "Materials" in stripped and "added" in stripped:
+            # Very tolerant: "Materials added: 3.5", "Materials  added : 3,5", etc.
+            m = re.search(
+                r"Materials\s*added[^\d]*([0-9]+(?:[.,][0-9]+)?)",
+                stripped,
+                flags=re.IGNORECASE,
+            )
             if not m:
                 continue
-            materials = float(m.group(1))
+            materials = normalize_number(m.group(1))
             name = find_discord_name(lines, i + 1)
             if not name:
                 continue
@@ -106,11 +118,15 @@ def parse_log(raw_log: str):
             continue
 
         # ----- Supply Missions -----
-        if "Delivered Supplies" in stripped:
-            m = re.search(r"Delivered Supplies[:\s]*([0-9]+(?:\.[0-9]+)?)", stripped)
+        if "Delivered" in stripped and "Supplies" in stripped:
+            m = re.search(
+                r"Delivered\s*Supplies[^\d]*([0-9]+(?:[.,][0-9]+)?)",
+                stripped,
+                flags=re.IGNORECASE,
+            )
             if not m:
                 continue
-            amount = float(m.group(1))
+            amount = normalize_number(m.group(1))
             name = find_discord_name(lines, i + 1)
             if not name:
                 continue
@@ -123,10 +139,10 @@ def parse_log(raw_log: str):
         # ----- Ledger -----
         if "Deposited to clan ledger" in stripped or "Withdrew from clan ledger" in stripped:
             transition = "Deposit" if "Deposited" in stripped else "Withdrawal"
-            m = re.search(r"\$([0-9]+(?:\.[0-9]+)?)", stripped)
+            m = re.search(r"\$([0-9]+(?:[.,][0-9]+)?)", stripped)
             if not m:
                 continue
-            amount = float(m.group(1))
+            amount = normalize_number(m.group(1))
             name = find_discord_name(lines, i + 1)
             if not name:
                 continue
@@ -369,22 +385,19 @@ async def logdebug_range(ctx, start_str: str, end_str: str):
     preview = raw_log[:800] or "(no text)"
     await ctx.send(f"Preview:\n```{preview}```")
 
-    # ---- NEW: run the parser directly on the same raw_log ----
     cleaned = strip_code_block(raw_log)
     donations, supplies, ledger = parse_log(cleaned)
 
     await ctx.send(
         f"Parser results:\n"
-        f"- Donations: {len(donations)}\n"
-        f"- Supplies: {len(supplies)}\n"
-        f"- Ledger entries: {len(ledger)}"
+        f"Donations: {len(donations)}\n"
+        f"Supplies: {len(supplies)}\n"
+        f"Ledger entries: {len(ledger)}"
     )
 
-    # Show the tables it would generate
     tables = build_markdown_output(donations, supplies, ledger)
     for part in chunk_text(tables):
         await ctx.send(part)
 
 
 bot.run(TOKEN)
-
