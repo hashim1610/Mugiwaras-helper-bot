@@ -51,7 +51,7 @@ async def build_raw_log_from_channel(bot, start_date, end_date):
         parts = []
 
         # Date marker for all content from this message
-        parts.append("__DATE__ %s" % md.isoformat())
+        parts.append("__DATE__ %s" % md.strftime("%d-%m-%Y"))
 
         if m.content:
             parts.append(m.content)
