@@ -1,23 +1,13 @@
 # bot.py
 import os
-import yaml
 import discord
 from discord.ext import commands
 
 from camp_commands import register_camp_commands
 
-# ---------------- CONFIG ----------------
-
-TOKEN = os.getenv("TOKEN")  # <-- from Railway env
+TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    raise RuntimeError("TOKEN not found in environment variables!")
-
-# Optional config.yaml (for non-secret values)
-if os.path.exists("config.yaml"):
-    with open("config.yaml", "r") as f:
-        CONFIG = yaml.safe_load(f)
-else:
-    CONFIG = {}
+    raise RuntimeError("❌ Environment variable TOKEN not found!")
 
 intents = discord.Intents.default()
 intents.message_content = True

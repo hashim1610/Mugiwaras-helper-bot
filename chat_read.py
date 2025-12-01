@@ -3,13 +3,10 @@ import os
 import discord
 from datetime import date
 
-LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))  # <-- from Railway env
+LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))
 
 
 async def get_log_channel(bot: discord.Client):
-    """
-    Gets the log channel where the clan logs are posted.
-    """
     if LOG_CHANNEL_ID == 0:
         return None
 
@@ -20,6 +17,7 @@ async def get_log_channel(bot: discord.Client):
         except Exception:
             return None
     return ch
+
 
 async def build_raw_log_from_channel(
     bot: discord.Client,
