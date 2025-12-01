@@ -104,9 +104,11 @@ def extract_number_after_char(text, ch_marker):
 def parse_log(raw_log):
     """
     Parse the raw log text into three lists:
-      - donations: [{name, materials}]
-      - supplies: [{name, amount}]
-      - ledger: [{name, transition, amount}]
+      - donations: [{name, materials, date}]
+      - supplies: [{name, amount, date}]
+      - ledger: [{name, transition, amount, date}]
+    Date is derived from special lines: "__DATE__ YYYY-MM-DD"
+    injected by chat_read.build_raw_log_from_channel.
     """
     lines = raw_log.splitlines()
     n = len(lines)
@@ -115,9 +117,17 @@ def parse_log(raw_log):
     supplies = []
     ledger = []
 
+    current_date = None
+
     i = 0
     while i < n:
         line = lines[i].strip()
+
+        # Date marker from chat_read
+        if line.startswith("__DATE__ "):
+            current_date = line[len("__DATE__ "):].strip()
+            i += 1
+            continue
 
         # Donations
         if "Donated" in line and "Materials added" in line:
@@ -130,7 +140,11 @@ def parse_log(raw_log):
                         name = clean_discord_name(dp, lines, j)
                         break
                 if name:
-                    donations.append({"name": name, "materials": materials})
+                    donations.append({
+                        "name": name,
+                        "materials": materials,
+                        "date": current_date,
+                    })
 
         # Supplies
         if "Delivered" in line and "Supplies" in line:
@@ -143,7 +157,11 @@ def parse_log(raw_log):
                         name = clean_discord_name(dp, lines, j)
                         break
                 if name:
-                    supplies.append({"name": name, "amount": amt})
+                    supplies.append({
+                        "name": name,
+                        "amount": amt,
+                        "date": current_date,
+                    })
 
         # Ledger
         if ("Deposited to clan ledger" in line) or ("Withdrew from clan ledger" in line):
@@ -159,7 +177,12 @@ def parse_log(raw_log):
                         break
 
                 if name:
-                    ledger.append({"name": name, "transition": trans, "amount": amt})
+                    ledger.append({
+                        "name": name,
+                        "transition": trans,
+                        "amount": amt,
+                        "date": current_date,
+                    })
 
         i += 1
 
@@ -204,17 +227,19 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     Returns a list of 4 markdown sections:
       0: Donations breakdown
       1: Overall totals
-      2: Supply summary
-      3: Ledger transactions
+      2: Supply summary (WITH date)
+      3: Ledger transactions (WITH date)
+    Titles are plain text (no **), so they don't show raw asterisks inside ```md code blocks.
     """
     sections = []
 
-    # Donations summary
+    # Donations summary (aggregated)
     donation_map = {}
     for d in donations:
         nm = d["name"]
         mt = d["materials"]
-        donation_map.setdefault(nm, {"count": 0, "total": 0})
+        if nm not in donation_map:
+            donation_map[nm] = {"count": 0, "total": 0.0}
         donation_map[nm]["count"] += 1
         donation_map[nm]["total"] += mt
 
@@ -228,7 +253,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
 
     # 1) Donations table
     sec1_lines = []
-    sec1_lines.append("**🟥 Donations Breakdown Table Summary**")
+    sec1_lines.append("🟥 Donations Breakdown Table Summary")
 
     donation_rows = [
         [
@@ -250,7 +275,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
 
     # 2) Overall Totals
     sec2_lines = []
-    sec2_lines.append("**🟦 Overall Totals**")
+    sec2_lines.append("🟦 Overall Totals")
     sec2_lines.append(
         make_table(
             ["Total Donations", "Total Materials Value"],
@@ -260,38 +285,42 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     )
     sections.append("\n\n".join(sec2_lines))
 
-    # 3) Supplies
+    # 3) Supplies (with Date column)
     sec3_lines = []
-    sec3_lines.append("**🟩 Supply Mission Summary**")
-    supply_rows = [
-        [display_name_from_mention(s["name"], id_to_name), "%.2f" % s["amount"]]
-        for s in supplies
-    ]
+    sec3_lines.append("🟩 Supply Mission Summary")
+
+    supply_rows = []
+    for s in supplies:
+        date_str = s.get("date") or ""
+        name = display_name_from_mention(s["name"], id_to_name)
+        supply_rows.append([date_str, name, "%.2f" % s["amount"]])
+
     sec3_lines.append(
         make_table(
-            ["Name", "Supplies Delivered"],
+            ["Date", "Name", "Supplies Delivered"],
             supply_rows,
-            align_right={1}
+            align_right={2}
         )
     )
     sections.append("\n\n".join(sec3_lines))
 
-    # 4) Ledger
+    # 4) Ledger (with Date column)
     sec4_lines = []
-    sec4_lines.append("**🟨 Ledger Transactions**")
+    sec4_lines.append("🟨 Ledger Transactions")
     ledger_rows = []
     for l in ledger:
+        date_str = l.get("date") or ""
         base_name = display_name_from_mention(l["name"], id_to_name)
         transition = "⬆️ Deposit" if l["transition"] == "Deposit" else "⬇️ Withdrawal"
         ledger_rows.append(
-            [base_name, transition, "$%.2f" % l["amount"]]
+            [date_str, base_name, transition, "$%.2f" % l["amount"]]
         )
 
     sec4_lines.append(
         make_table(
-            ["Name", "Transition", "Amount"],
+            ["Date", "Name", "Transition", "Amount"],
             ledger_rows,
-            align_right={2}
+            align_right={3}
         )
     )
     sections.append("\n\n".join(sec4_lines))

@@ -8,17 +8,17 @@ from info_table import display_name_from_mention
 def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
     """
     Build a CSV that mirrors your 4 sections:
-      - Donations Breakdown
+      - Donations Breakdown (aggregated)
       - Overall Totals
-      - Supply Mission Summary
-      - Ledger Transactions
+      - Supply Mission Summary (with Date)
+      - Ledger Transactions (with Date)
 
     Returns CSV data as bytes (UTF-8), ready for discord.File().
     """
     output = io.StringIO()
     writer = csv.writer(output)
 
-    # Donations Breakdown
+    # Donations Breakdown (aggregated per name)
     donation_map = {}
     for d in donations:
         nm = d["name"]
@@ -53,20 +53,22 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
     writer.writerow([total_count, "%.2f" % total_mat])
     writer.writerow([])
 
-    # Supply summary
+    # Supply summary WITH Date
     writer.writerow(["Supply Mission Summary"])
-    writer.writerow(["Name", "Supplies Delivered"])
+    writer.writerow(["Date", "Name", "Supplies Delivered"])
     for s in supplies:
         disp_name = display_name_from_mention(s["name"], id_to_name)
-        writer.writerow([disp_name, "%.2f" % s["amount"]])
+        date_str = s.get("date") or ""
+        writer.writerow([date_str, disp_name, "%.2f" % s["amount"]])
     writer.writerow([])
 
-    # Ledger transactions
+    # Ledger transactions WITH Date
     writer.writerow(["Ledger Transactions"])
-    writer.writerow(["Name", "Transition", "Amount"])
+    writer.writerow(["Date", "Name", "Transition", "Amount"])
     for l in ledger:
         disp_name = display_name_from_mention(l["name"], id_to_name)
         transition = "Deposit" if l["transition"] == "Deposit" else "Withdrawal"
-        writer.writerow([disp_name, transition, "%.2f" % l["amount"]])
+        date_str = l.get("date") or ""
+        writer.writerow([date_str, disp_name, transition, "%.2f" % l["amount"]])
 
     return output.getvalue().encode("utf-8")

@@ -29,6 +29,7 @@ async def build_raw_log_from_channel(bot, start_date, end_date):
     """
     Read messages from the log channel and return a single big text blob.
     Includes:
+      - a date marker line: __DATE__ YYYY-MM-DD
       - message content
       - embed titles/descriptions/fields
       - text/log attachments
@@ -48,6 +49,9 @@ async def build_raw_log_from_channel(bot, start_date, end_date):
             continue
 
         parts = []
+
+        # Date marker for all content from this message
+        parts.append("__DATE__ %s" % md.isoformat())
 
         if m.content:
             parts.append(m.content)
