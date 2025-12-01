@@ -334,7 +334,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
 
     sec4_lines.append(
         make_table(
-            ["Date", "Name", "Transition", "Amount"],
+            ["Date", "Name", "Transition ", "Amount"],
             ledger_rows,
             align_right={3}
         )
