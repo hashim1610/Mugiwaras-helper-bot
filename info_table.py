@@ -264,7 +264,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
 
     # 1) Donations table
     sec1_lines = []
-    sec1_lines.append("🟥 Donations Breakdown Table Summary")
+    sec1_lines.append("🟥 BUTCHER TABLE DONATION REPORT")
 
     donation_rows = [
         [
@@ -286,7 +286,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
 
     # 2) Overall Totals (now with Total Member Count)
     sec2_lines = []
-    sec2_lines.append("🟦 Overall Totals")
+    sec2_lines.append("🟦 BUTCHER DONATION OVERALL TOTAL")
     sec2_lines.append(
         make_table(
             ["Total Member Count" ,"Total Donations", "Total Materials Value"],
@@ -298,7 +298,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
 
     # 3) Supplies (with Date column)
     sec3_lines = []
-    sec3_lines.append("🟩 Supply Mission Summary")
+    sec3_lines.append("🟩 SUPPLY MISSION REPORT")
 
     supply_rows = []
     for s in supplies:
@@ -317,7 +317,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
 
     # 4) Ledger (with Date column)
     sec4_lines = []
-    sec4_lines.append("🟨 Ledger Transactions")
+    sec4_lines.append("🟨 LEDGER TRANSACTIONS")
     ledger_rows = []
     for l in ledger:
         date_str = l.get("date") or ""

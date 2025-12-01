@@ -46,7 +46,7 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
         member_names.add(l["name"])
     total_member_count = len(member_names)
 
-    writer.writerow(["Donations Breakdown Table Summary"])
+    writer.writerow(["BUTCHER TABLE DONATION REPORT"])
     writer.writerow(["Name", "Donations", "Total Materials Value"])
     for name, stats in sorted_don:
         disp_name = display_name_from_mention(name, id_to_name)
@@ -58,13 +58,13 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
     writer.writerow([])
 
     # Overall totals (now includes Total Members)
-    writer.writerow(["Overall Totals"])
+    writer.writerow(["BUTCHER DONATION OVERALL TOTAL"])
     writer.writerow(["Total Members","Total Donations", "Total Materials Value"])
     writer.writerow([total_member_count,total_count, "%.2f" % total_mat])
     writer.writerow([])
 
     # Supply summary WITH Date
-    writer.writerow(["Supply Mission Summary"])
+    writer.writerow(["SUPPLY MISSION REPORT"])
     writer.writerow(["Date", "Name", "Supplies Delivered"])
     for s in supplies:
         disp_name = display_name_from_mention(s["name"], id_to_name)
@@ -73,7 +73,7 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
     writer.writerow([])
 
     # Ledger transactions WITH Date
-    writer.writerow(["Ledger Transactions"])
+    writer.writerow(["LEDGER TRANSACTIONS"])
     writer.writerow(["Date", "Name", "Transition", "Amount"])
     for l in ledger:
         disp_name = display_name_from_mention(l["name"], id_to_name)
