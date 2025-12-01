@@ -3,10 +3,14 @@ import os
 import discord
 from datetime import date
 
+# Logs come from this channel (set in Railway env)
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))
 
 
 async def get_log_channel(bot: discord.Client):
+    """
+    Get the log channel using the ID from the LOG_CHANNEL_ID env var.
+    """
     if LOG_CHANNEL_ID == 0:
         return None
 
