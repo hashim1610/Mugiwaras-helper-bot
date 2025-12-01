@@ -9,7 +9,7 @@ from chat_read import build_raw_log_from_channel
 from info_table import parse_log, build_markdown_sections
 from info_csv import build_logsummary_csv_bytes
 
-# ✅ Commands are ONLY allowed in this channel:
+# Commands are ONLY allowed in this channel:
 COMMAND_CHANNEL_ID = 1442401333692072027
 
 
@@ -35,6 +35,11 @@ async def _send_sections_interaction(
     sections,
     already_responded: bool = False,
 ):
+    """
+    Sends one or more markdown sections.
+    If already_responded=False, the FIRST chunk uses interaction.response.send_message;
+    the rest use interaction.followup.send.
+    """
     first_send = not already_responded
 
     for sec in sections:
@@ -55,7 +60,6 @@ async def _ensure_command_channel(interaction: discord.Interaction) -> bool:
     If not, send an ephemeral error and return False.
     """
     if interaction.channel_id != COMMAND_CHANNEL_ID:
-        # Mention the correct channel in the error
         await interaction.response.send_message(
             f"❌ This command can only be used in <#{COMMAND_CHANNEL_ID}>.",
             ephemeral=True,
@@ -82,7 +86,7 @@ def register_camp_commands(bot: discord.Client):
         start_str: str,
         end_str: str,
     ):
-        # ✅ Enforce command channel
+        # Enforce command channel FIRST
         if not await _ensure_command_channel(interaction):
             return
 
@@ -90,7 +94,8 @@ def register_camp_commands(bot: discord.Client):
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
         except Exception:
-            await interaction.followup.send(
+            # First response in this command
+            await interaction.response.send_message(
                 "❌ Use format: `DD-MM-YYYY` for both dates.",
                 ephemeral=True,
             )
@@ -105,7 +110,8 @@ def register_camp_commands(bot: discord.Client):
         filename = f"logsummary_{start_str}_to_{end_str}.csv"
         file = discord.File(io.BytesIO(csv_bytes), filename=filename)
 
-        await interaction.followup.send(
+        # This is the ONLY response in this command
+        await interaction.response.send_message(
             "📄 Here is your CSV log summary:",
             file=file,
         )
@@ -130,7 +136,7 @@ def register_camp_commands(bot: discord.Client):
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
         except Exception:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "❌ Use format: `DD-MM-YYYY` for both dates.",
                 ephemeral=True,
             )
@@ -138,10 +144,11 @@ def register_camp_commands(bot: discord.Client):
 
         raw = await build_raw_log_from_channel(interaction.client, start, end)
 
+        # First response: stats + preview
         msg = f"Fetched {len(raw)} chars"
         preview = raw[:800] or "(no text)"
         msg_preview = f"{msg}\n```text\n{preview}\n```"
-        await interaction.followup.send(msg_preview)
+        await interaction.response.send_message(msg_preview)
 
         donations, supplies, ledger = parse_log(raw)
         await interaction.followup.send(
@@ -152,6 +159,7 @@ def register_camp_commands(bot: discord.Client):
         id_to_name = _build_id_to_name(guild)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
 
+        # Now only followups (already_responded=True)
         await _send_sections_interaction(
             interaction, sections, already_responded=True
         )
@@ -176,7 +184,7 @@ def register_camp_commands(bot: discord.Client):
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
         except Exception:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "❌ Use format: `DD-MM-YYYY` for both dates.",
                 ephemeral=True,
             )
@@ -188,6 +196,8 @@ def register_camp_commands(bot: discord.Client):
         donations, supplies, ledger = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         donations_sec = [sections[0]]
+
+        # This helper handles first response + any extra chunks
         await _send_sections_interaction(interaction, donations_sec)
 
     @bot.tree.command(
@@ -210,7 +220,7 @@ def register_camp_commands(bot: discord.Client):
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
         except Exception:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "❌ Use format: `DD-MM-YYYY` for both dates.",
                 ephemeral=True,
             )
@@ -244,7 +254,7 @@ def register_camp_commands(bot: discord.Client):
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
         except Exception:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "❌ Use format: `DD-MM-YYYY` for both dates.",
                 ephemeral=True,
             )
@@ -278,7 +288,7 @@ def register_camp_commands(bot: discord.Client):
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
         except Exception:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "❌ Use format: `DD-MM-YYYY` for both dates.",
                 ephemeral=True,
             )
