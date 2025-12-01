@@ -1,33 +1,31 @@
 # chat_read.py
 import os
-import discord
 from datetime import date
 
-# Logs come from this channel (set in Railway env)
+import discord
+
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))
 
 
-async def get_log_channel(bot: discord.Client):
+async def get_log_channel(bot):
     """
-    Get the log channel using the ID from the LOG_CHANNEL_ID env var.
+    Get the log channel using LOG_CHANNEL_ID from env.
     """
     if LOG_CHANNEL_ID == 0:
+        print("⚠ LOG_CHANNEL_ID is 0 or not set.")
         return None
 
     ch = bot.get_channel(LOG_CHANNEL_ID)
     if ch is None:
         try:
             ch = await bot.fetch_channel(LOG_CHANNEL_ID)
-        except Exception:
+        except Exception as e:
+            print(f"❌ Failed to fetch log channel {LOG_CHANNEL_ID}: {e}")
             return None
     return ch
 
 
-async def build_raw_log_from_channel(
-    bot: discord.Client,
-    start_date: date | None,
-    end_date: date | None,
-) -> str:
+async def build_raw_log_from_channel(bot, start_date, end_date):
     """
     Read messages from the log channel and return a single big text blob.
     Includes:
@@ -37,9 +35,10 @@ async def build_raw_log_from_channel(
     """
     channel = await get_log_channel(bot)
     if not channel:
+        print("⚠ No log channel available.")
         return ""
 
-    msgs: list[str] = []
+    msgs = []
 
     async for m in channel.history(limit=5000, oldest_first=True):
         md = m.created_at.date()
@@ -48,7 +47,7 @@ async def build_raw_log_from_channel(
         if end_date and md > end_date:
             continue
 
-        parts: list[str] = []
+        parts = []
 
         if m.content:
             parts.append(m.content)
@@ -59,15 +58,16 @@ async def build_raw_log_from_channel(
             if e.description:
                 parts.append(e.description)
             for f in e.fields:
-                parts.append(f"{f.name}: {f.value}")
+                parts.append("%s: %s" % (f.name, f.value))
 
         for att in m.attachments:
-            if att.filename.lower().endswith((".txt", ".log")):
+            fn = att.filename.lower()
+            if fn.endswith(".txt") or fn.endswith(".log"):
                 try:
                     data = await att.read()
                     parts.append(data.decode("utf-8"))
-                except Exception:
-                    pass
+                except Exception as e:
+                    print("⚠ Failed to read attachment %s: %s" % (fn, e))
 
         if parts:
             msgs.append("\n".join(parts))

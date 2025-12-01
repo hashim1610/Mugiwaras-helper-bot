@@ -1,14 +1,13 @@
 # info_table.py
 import re
-from typing import Any, Dict, List, Tuple
 
-def normalize_number(num_str: str) -> float:
+def normalize_number(num_str):
     return float(num_str.replace(",", ".").strip())
 
 
 # ---------------- NAME HANDLING ----------------
 
-def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
+def clean_discord_name(discord_part, lines, idx):
     """
     Extract meaningful name from log line.
     Prefer <@ID> → resolved display name.
@@ -18,12 +17,12 @@ def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
     # Raw mention in this line
     m = re.search(r"<@!?(\d+)>", s)
     if m:
-        return f"<@{m.group(1)}>"
+        return "<@%s>" % m.group(1)
 
     # Pattern like: @Name ... ID
     tokens = s.split()
     if tokens and tokens[-1].isdigit():
-        return f"<@{tokens[-1]}>"
+        return "<@%s>" % tokens[-1]
 
     # Look ahead for name or ID
     for k in range(idx + 1, min(idx + 4, len(lines))):
@@ -33,11 +32,11 @@ def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
 
         m2 = re.search(r"<@!?(\d+)>", nxt)
         if m2:
-            return f"<@{m2.group(1)}>"
+            return "<@%s>" % m2.group(1)
 
         parts = nxt.split()
         if parts and parts[-1].isdigit():
-            return f"<@{parts[-1]}>"
+            return "<@%s>" % parts[-1]
 
         # fallback textual name
         name = " ".join(parts)
@@ -47,7 +46,7 @@ def clean_discord_name(discord_part: str, lines, idx: int) -> str | None:
     return s or None
 
 
-def display_name_from_mention(name: str, id_to_name: dict | None) -> str:
+def display_name_from_mention(name, id_to_name):
     """
     Convert <@ID> → DisplayName (no leading @).
     If not a mention or unknown, return name as-is.
@@ -70,7 +69,7 @@ def display_name_from_mention(name: str, id_to_name: dict | None) -> str:
 
 # ---------------- NUMBER EXTRACTION ----------------
 
-def extract_number_after_marker(text: str, marker: str) -> float | None:
+def extract_number_after_marker(text, marker):
     if marker not in text:
         return None
     tail = text.split(marker, 1)[1]
@@ -85,7 +84,7 @@ def extract_number_after_marker(text: str, marker: str) -> float | None:
     return normalize_number(digits) if digits else None
 
 
-def extract_number_after_char(text: str, ch_marker: str) -> float | None:
+def extract_number_after_char(text, ch_marker):
     if ch_marker not in text:
         return None
     tail = text.split(ch_marker, 1)[1]
@@ -102,7 +101,7 @@ def extract_number_after_char(text: str, ch_marker: str) -> float | None:
 
 # ---------------- PARSER ----------------
 
-def parse_log(raw_log: str):
+def parse_log(raw_log):
     """
     Parse the raw log text into three lists:
       - donations: [{name, materials}]
@@ -235,7 +234,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
         [
             display_name_from_mention(name, id_to_name),
             stats["count"],
-            f"{stats['total']:.2f}",
+            "%.2f" % stats["total"],
         ]
         for name, stats in sorted_don
     ]
@@ -255,7 +254,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     sec2_lines.append(
         make_table(
             ["Total Donations", "Total Materials Value"],
-            [[total_count, f"{total_mat:.2f}"]],
+            [[total_count, "%.2f" % total_mat]],
             align_right={0, 1}
         )
     )
@@ -265,7 +264,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     sec3_lines = []
     sec3_lines.append("**🟩 Supply Mission Summary**")
     supply_rows = [
-        [display_name_from_mention(s["name"], id_to_name), f"{s['amount']:.2f}"]
+        [display_name_from_mention(s["name"], id_to_name), "%.2f" % s["amount"]]
         for s in supplies
     ]
     sec3_lines.append(
@@ -285,7 +284,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
         base_name = display_name_from_mention(l["name"], id_to_name)
         transition = "⬆️ Deposit" if l["transition"] == "Deposit" else "⬇️ Withdrawal"
         ledger_rows.append(
-            [base_name, transition, f"${l['amount']:.2f}"]
+            [base_name, transition, "$%.2f" % l["amount"]]
         )
 
     sec4_lines.append(

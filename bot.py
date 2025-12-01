@@ -15,13 +15,18 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Register all slash commands BEFORE syncing
+register_camp_commands(bot)
+
 
 @bot.event
 async def on_ready():
     print(f"✔ Logged in as {bot.user} (ID {bot.user.id})")
-    
-    # Register slash commands
-    register_camp_commands(bot)
+
+    # Print commands we see locally
+    print("Registered application commands (local):")
+    for cmd in bot.tree.walk_commands():
+        print(f" - /{cmd.name}")
 
     # Sync slash commands globally
     try:
