@@ -47,7 +47,7 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
     total_member_count = len(member_names)
 
     writer.writerow(["BUTCHER TABLE DONATION REPORT"])
-    writer.writerow(["Name", "Donations", "Total Materials Value"])
+    writer.writerow(["Name", "Number of Donations", "Total Materials Value"])
     for name, stats in sorted_don:
         disp_name = display_name_from_mention(name, id_to_name)
         writer.writerow([
@@ -59,7 +59,7 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
 
     # Overall totals (now includes Total Members)
     writer.writerow(["BUTCHER DONATION OVERALL TOTAL"])
-    writer.writerow(["Total Members","Total Donations", "Total Materials Value"])
+    writer.writerow(["Total Members","Total Number of Donations", "Total Materials Value"])
     writer.writerow([total_member_count,total_count, "%.2f" % total_mat])
     writer.writerow([])
 
