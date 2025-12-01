@@ -226,10 +226,10 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     """
     Returns a list of 4 markdown sections:
       0: Donations breakdown
-      1: Overall totals
+      1: Overall totals (with total member count)
       2: Supply summary (WITH date)
       3: Ledger transactions (WITH date)
-    Titles are plain text (no **), so they don't show raw asterisks inside ```md code blocks.
+    Titles are plain text so they don't show raw asterisks inside ```md blocks.
     """
     sections = []
 
@@ -250,6 +250,17 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
 
     total_count = sum(v["count"] for v in donation_map.values())
     total_mat = sum(v["total"] for v in donation_map.values())
+
+    # ✅ Total members in this date range:
+    # We deduplicate by the raw "name" field (usually <@ID>)
+    member_names = set()
+    for d in donations:
+        member_names.add(d["name"])
+    for s in supplies:
+        member_names.add(s["name"])
+    for l in ledger:
+        member_names.add(l["name"])
+    total_member_count = len(member_names)
 
     # 1) Donations table
     sec1_lines = []
@@ -273,14 +284,14 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     )
     sections.append("\n\n".join(sec1_lines))
 
-    # 2) Overall Totals
+    # 2) Overall Totals (now with Total Member Count)
     sec2_lines = []
     sec2_lines.append("🟦 Overall Totals")
     sec2_lines.append(
         make_table(
-            ["Total Donations", "Total Materials Value"],
-            [[total_count, "%.2f" % total_mat]],
-            align_right={0, 1}
+            ["Total Donations", "Total Materials Value", "Total Member Count"],
+            [[total_count, "%.2f" % total_mat, total_member_count]],
+            align_right={0, 1, 2}
         )
     )
     sections.append("\n\n".join(sec2_lines))
@@ -326,3 +337,4 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     sections.append("\n\n".join(sec4_lines))
 
     return sections
+

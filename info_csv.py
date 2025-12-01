@@ -9,7 +9,7 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
     """
     Build a CSV that mirrors your 4 sections:
       - Donations Breakdown (aggregated)
-      - Overall Totals
+      - Overall Totals (with Total Members)
       - Supply Mission Summary (with Date)
       - Ledger Transactions (with Date)
 
@@ -36,6 +36,16 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
     total_count = sum(v["count"] for v in donation_map.values())
     total_mat = sum(v["total"] for v in donation_map.values())
 
+    # ✅ Total members in this date range
+    member_names = set()
+    for d in donations:
+        member_names.add(d["name"])
+    for s in supplies:
+        member_names.add(s["name"])
+    for l in ledger:
+        member_names.add(l["name"])
+    total_member_count = len(member_names)
+
     writer.writerow(["Donations Breakdown Table Summary"])
     writer.writerow(["Name", "Donations", "Total Materials Value"])
     for name, stats in sorted_don:
@@ -47,10 +57,10 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
         ])
     writer.writerow([])
 
-    # Overall totals
+    # Overall totals (now includes Total Members)
     writer.writerow(["Overall Totals"])
-    writer.writerow(["Total Donations", "Total Materials Value"])
-    writer.writerow([total_count, "%.2f" % total_mat])
+    writer.writerow(["Total Donations", "Total Materials Value", "Total Members"])
+    writer.writerow([total_count, "%.2f" % total_mat, total_member_count])
     writer.writerow([])
 
     # Supply summary WITH Date
@@ -72,3 +82,4 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
         writer.writerow([date_str, disp_name, transition, "%.2f" % l["amount"]])
 
     return output.getvalue().encode("utf-8")
+
