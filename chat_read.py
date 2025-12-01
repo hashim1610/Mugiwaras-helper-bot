@@ -1,18 +1,14 @@
 # chat_read.py
+import os
 import discord
 from datetime import date
-import yaml
 
-# Load config
-with open("config.yaml", "r") as f:
-    CONFIG = yaml.safe_load(f)
-
-LOG_CHANNEL_ID = int(CONFIG["discord"]["log_channel_id"])
+LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))  # <-- from Railway env
 
 
 async def get_log_channel(bot: discord.Client):
     """
-    Get the log channel using the ID from config.yaml.
+    Gets the log channel where the clan logs are posted.
     """
     if LOG_CHANNEL_ID == 0:
         return None
@@ -24,7 +20,6 @@ async def get_log_channel(bot: discord.Client):
         except Exception:
             return None
     return ch
-
 
 async def build_raw_log_from_channel(
     bot: discord.Client,
