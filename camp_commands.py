@@ -70,7 +70,7 @@ def register_camp_commands(bot):
 
     @bot.tree.command(
         name="logsummary_range",
-        description="Summarize logs between two dates (CSV file output)",
+        description="Summarize logs between two dates (xlsx file output)",
     )
     @app_commands.describe(
         start_str="Start date (DD-MM-YYYY)",
@@ -108,7 +108,7 @@ def register_camp_commands(bot):
 
 
         await interaction.followup.send(
-            "📄 Here is your CSV log summary:",
+            "📄 Here is your xlsx log summary:",
             file=file,
         )
 
