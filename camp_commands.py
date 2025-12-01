@@ -70,7 +70,7 @@ def register_camp_commands(bot):
 
     @bot.tree.command(
         name="logsummary_range",
-        description="Summarize logs between two dates (xlsx file output)",
+        description="Summarize logs between two dates (CSV file output)",
     )
     @app_commands.describe(
         start_str="Start date (DD-MM-YYYY)",
@@ -103,12 +103,11 @@ def register_camp_commands(bot):
 
         donations, supplies, ledger = parse_log(raw)
         csv_bytes = build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name)
-        filename = "logsummary_%s_to_%s.xlsx" % (start_str, end_str)
+        filename = "logsummary_%s_to_%s.csv" % (start_str, end_str)
         file = discord.File(io.BytesIO(csv_bytes), filename=filename)
 
-
         await interaction.followup.send(
-            "📄 Here is your xlsx log summary:",
+            "📄 Here is your CSV log summary:",
             file=file,
         )
 
