@@ -169,6 +169,10 @@ def parse_log(raw_log):
             amt = extract_number_after_char(line, "$")
 
             if amt is not None:
+                # Make withdrawals negative
+                if trans == "Withdrawal":
+                    amt = -abs(amt)
+
                 name = None
                 for j in range(i + 1, min(i + 6, n)):
                     if "Discord:" in lines[j]:
@@ -180,9 +184,10 @@ def parse_log(raw_log):
                     ledger.append({
                         "name": name,
                         "transition": trans,
-                        "amount": amt,
+                        "amount": amt,   # now negative for withdrawals
                         "date": current_date,
-                    })
+            })
+
 
         i += 1
 
