@@ -289,8 +289,8 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     sec2_lines.append("🟦 Overall Totals")
     sec2_lines.append(
         make_table(
-            ["Total Donations", "Total Materials Value", "Total Member Count"],
-            [[total_count, "%.2f" % total_mat, total_member_count]],
+            ["Total Member Count" ,"Total Donations", "Total Materials Value"],
+            [[total_member_count,total_count, "%.2f" % total_mat]],
             align_right={0, 1, 2}
         )
     )

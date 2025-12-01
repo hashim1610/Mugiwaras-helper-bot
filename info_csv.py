@@ -59,8 +59,8 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None):
 
     # Overall totals (now includes Total Members)
     writer.writerow(["Overall Totals"])
-    writer.writerow(["Total Donations", "Total Materials Value", "Total Members"])
-    writer.writerow([total_count, "%.2f" % total_mat, total_member_count])
+    writer.writerow(["Total Members","Total Donations", "Total Materials Value"])
+    writer.writerow([total_member_count,total_count, "%.2f" % total_mat])
     writer.writerow([])
 
     # Supply summary WITH Date
