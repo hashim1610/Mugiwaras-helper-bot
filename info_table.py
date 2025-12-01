@@ -327,14 +327,14 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     for l in ledger:
         date_str = l.get("date") or ""
         base_name = display_name_from_mention(l["name"], id_to_name)
-        transition = "➕ Deposit" if l["transition"] == "Deposit" else "➖ Withdrawal"
+        transition = "+ Deposit" if l["transition"] == "Deposit" else "- Withdrawal"
         ledger_rows.append(
             [date_str, base_name, transition, "%.2f" % l["amount"]]
         )
 
     sec4_lines.append(
         make_table(
-            ["Date", "Name", "Transition ", "Amount"],
+            ["Date", "Name", "Transition", "Amount"],
             ledger_rows,
             align_right={3}
         )
