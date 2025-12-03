@@ -35,6 +35,11 @@ async def _send_sections_interaction(
     sections,
     already_responded=False,
 ):
+    """
+    Send one or more markdown sections.
+    - If already_responded is False: first chunk uses interaction.response.send_message()
+    - If already_responded is True: all chunks use interaction.followup.send()
+    """
     first_send = not already_responded
 
     for sec in sections:
@@ -154,6 +159,7 @@ def register_camp_commands(bot):
         id_to_name = _build_id_to_name(guild)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
 
+        # Already responded once, so only use followups now
         await _send_sections_interaction(
             interaction, sections, already_responded=True
         )
@@ -184,13 +190,18 @@ def register_camp_commands(bot):
             )
             return
 
+        # Defer because reading + parsing logs can take time
+        await interaction.response.defer(thinking=True)
+
         raw = await build_raw_log_from_channel(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
         donations, supplies, ledger = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         donations_sec = [sections[0]]
-        await _send_sections_interaction(interaction, donations_sec)
+
+        # We've already deferred, so only followups
+        await _send_sections_interaction(interaction, donations_sec, already_responded=True)
 
     @bot.tree.command(
         name="logtotals_range",
@@ -218,13 +229,17 @@ def register_camp_commands(bot):
             )
             return
 
+        # Defer because reading + parsing logs can take time
+        await interaction.response.defer(thinking=True)
+
         raw = await build_raw_log_from_channel(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
         donations, supplies, ledger = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         totals_sec = [sections[1]]
-        await _send_sections_interaction(interaction, totals_sec)
+
+        await _send_sections_interaction(interaction, totals_sec, already_responded=True)
 
     @bot.tree.command(
         name="logsupply_range",
@@ -252,13 +267,17 @@ def register_camp_commands(bot):
             )
             return
 
+        # Defer because reading + parsing logs can take time
+        await interaction.response.defer(thinking=True)
+
         raw = await build_raw_log_from_channel(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
         donations, supplies, ledger = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         supply_sec = [sections[2]]
-        await _send_sections_interaction(interaction, supply_sec)
+
+        await _send_sections_interaction(interaction, supply_sec, already_responded=True)
 
     @bot.tree.command(
         name="logledger_range",
@@ -286,10 +305,15 @@ def register_camp_commands(bot):
             )
             return
 
+        # ✅ Defer here to avoid "Unknown interaction" when log reading is slow
+        await interaction.response.defer(thinking=True)
+
         raw = await build_raw_log_from_channel(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
         donations, supplies, ledger = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         ledger_sec = [sections[3]]
-        await _send_sections_interaction(interaction, ledger_sec)
+
+        # ✅ We've already deferred, so use followups only
+        await _send_sections_interaction(interaction, ledger_sec, already_responded=True)
