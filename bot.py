@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 
 from camp_commands import register_camp_commands
+from ranch_commands import RanchCommands  # 👈 NEW
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
@@ -17,6 +18,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Register all slash commands BEFORE syncing
 register_camp_commands(bot)
+
+# 👇 NEW: register the /ranch command group
+bot.tree.add_command(RanchCommands(bot))
 
 
 @bot.event
