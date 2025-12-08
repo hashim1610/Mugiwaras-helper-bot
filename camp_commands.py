@@ -110,7 +110,7 @@ def register_camp_commands(bot: discord.Client):
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
 
-        donations, supplies, ledger = parse_log(raw)
+        donations, supplies, ledger, deliveries = parse_log(raw)
         csv_bytes = build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name)
         filename = f"logsummary_{start_str}_to_{end_str}.csv"
         file = discord.File(io.BytesIO(csv_bytes), filename=filename)
@@ -153,10 +153,10 @@ def register_camp_commands(bot: discord.Client):
         msg_preview = f"{msg}\n```text\n{preview}\n```"
         await interaction.response.send_message(msg_preview)
 
-        donations, supplies, ledger = parse_log(raw)
+        donations, supplies, ledger, deliveries = parse_log(raw)
         await interaction.followup.send(
-            "Parsed:\nDonations: %d\nSupplies: %d\nLedger: %d"
-            % (len(donations), len(supplies), len(ledger))
+            "Parsed:\nDonations: %d\nSupplies: %d\nLedger: %d\nDeliveries: %d"
+            % (len(donations), len(supplies), len(ledger), len(deliveries))
         )
 
         guild = interaction.guild
@@ -199,7 +199,7 @@ def register_camp_commands(bot: discord.Client):
         raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger = parse_log(raw)
+        donations, supplies, ledger, deliveries = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         donations_sec = [sections[0]]
 
@@ -236,7 +236,7 @@ def register_camp_commands(bot: discord.Client):
         raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger = parse_log(raw)
+        donations, supplies, ledger, deliveries = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         totals_sec = [sections[1]]
 
@@ -273,7 +273,7 @@ def register_camp_commands(bot: discord.Client):
         raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger = parse_log(raw)
+        donations, supplies, ledger, deliveries = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         supply_sec = [sections[2]]
 
@@ -310,7 +310,7 @@ def register_camp_commands(bot: discord.Client):
         raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger = parse_log(raw)
+        donations, supplies, ledger, deliveries = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         ledger_sec = [sections[3]]
 
@@ -318,7 +318,7 @@ def register_camp_commands(bot: discord.Client):
 
     @bot.tree.command(
         name="logdelivery_range",
-        description="Show individual delivery/sale/purchase entries for a date range",
+        description="Show delivery missions (stock sales) for a date range",
     )
     @app_commands.describe(
         start_str="Start date (DD-MM-YYYY)",
@@ -347,10 +347,9 @@ def register_camp_commands(bot: discord.Client):
         raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger = parse_log(raw)
+        donations, supplies, ledger, deliveries = parse_log(raw)
 
-        delivery_table = build_delivery_table(supplies, id_to_name)
+        delivery_table = build_delivery_table(deliveries, id_to_name)
         await _send_sections_interaction(
             interaction, [delivery_table], already_responded=True
         )
-
