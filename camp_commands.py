@@ -177,7 +177,7 @@ def register_camp_commands(bot: discord.Client):
         end_str="End date (DD-MM-YYYY)",
     )
     async def logdonations_range_slash(
-        interaction: discord.Interation,
+        interaction: discord.Interaction,
         start_str: str,
         end_str: str,
     ):
@@ -214,7 +214,7 @@ def register_camp_commands(bot: discord.Client):
         end_str="End date (DD-MM-YYYY)",
     )
     async def logtotals_range_slash(
-        interaction: discord.Interation,
+        interaction: discord.Interaction,
         start_str: str,
         end_str: str,
     ):
@@ -353,3 +353,4 @@ def register_camp_commands(bot: discord.Client):
         await _send_sections_interaction(
             interaction, [delivery_table], already_responded=True
         )
+
