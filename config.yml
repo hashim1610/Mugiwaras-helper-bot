@@ -3,7 +3,7 @@ discord:
   token: "MTQ0MzM5NzczMDYyNDg2ODQ3Mw.GEjYwN.hPqjetMvfFQuyiYkYanmOPKL1gHDOqO0aas_-A"
 
   # Camp log channel (if you use it)
-  camp_log_channel_id: 123456789012345678
+  camp_log_channel_id: 1441867157570060379
 
   # Ranch log channel
   ranch_log_channel_id: 1447063911084982454
