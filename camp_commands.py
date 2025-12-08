@@ -5,15 +5,19 @@ import io
 import discord
 from discord import app_commands
 
-from chat_read import build_raw_log_from_channel
-from info_table import parse_log, build_markdown_sections
-from info_csv import build_logsummary_csv_bytes
+from chat_read import build_camp_raw_log
+from camp_out import (
+    parse_log,
+    build_markdown_sections,
+    build_delivery_table,
+    build_logsummary_csv_bytes,
+)
 
 # Commands only allowed here:
 COMMAND_CHANNEL_ID = 1442401333692072027
 
 
-def _build_id_to_name(guild):
+def _build_id_to_name(guild: discord.Guild | None):
     if not guild:
         return {}
     return {str(m.id): m.display_name for m in guild.members}
@@ -31,9 +35,9 @@ def _chunk_text(text, limit=1800):
 
 
 async def _send_sections_interaction(
-    interaction,
+    interaction: discord.Interaction,
     sections,
-    already_responded=False,
+    already_responded: bool = False,
 ):
     """
     Send one or more markdown sections.
@@ -46,7 +50,7 @@ async def _send_sections_interaction(
         if not sec.strip():
             continue
         for chunk in _chunk_text(sec):
-            msg = "```md\n%s\n```" % chunk.strip()
+            msg = f"```md\n{chunk.strip()}\n```"
             if first_send:
                 await interaction.response.send_message(msg)
                 first_send = False
@@ -54,21 +58,21 @@ async def _send_sections_interaction(
                 await interaction.followup.send(msg)
 
 
-async def _ensure_command_channel(interaction):
+async def _ensure_command_channel(interaction: discord.Interaction) -> bool:
     """
     Ensure the command is used in the correct channel (COMMAND_CHANNEL_ID).
     If not, send an ephemeral error and return False.
     """
     if interaction.channel_id != COMMAND_CHANNEL_ID:
         await interaction.response.send_message(
-            "❌ This command can only be used in <#%d>." % COMMAND_CHANNEL_ID,
+            f"❌ This command can only be used in <#{COMMAND_CHANNEL_ID}>.",
             ephemeral=True,
         )
         return False
     return True
 
 
-def register_camp_commands(bot):
+def register_camp_commands(bot: discord.Client):
     """
     Attach all / commands to the given bot.
     """
@@ -102,13 +106,13 @@ def register_camp_commands(bot):
         # Defer so we don't hit the 3s timeout
         await interaction.response.defer(thinking=True)
 
-        raw = await build_raw_log_from_channel(interaction.client, start, end)
+        raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
 
         donations, supplies, ledger = parse_log(raw)
         csv_bytes = build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name)
-        filename = "logsummary_%s_to_%s.csv" % (start_str, end_str)
+        filename = f"logsummary_{start_str}_to_{end_str}.csv"
         file = discord.File(io.BytesIO(csv_bytes), filename=filename)
 
         await interaction.followup.send(
@@ -142,11 +146,11 @@ def register_camp_commands(bot):
             )
             return
 
-        raw = await build_raw_log_from_channel(interaction.client, start, end)
+        raw = await build_camp_raw_log(interaction.client, start, end)
 
-        msg = "Fetched %d chars" % len(raw)
+        msg = f"Fetched {len(raw)} chars"
         preview = raw[:800] or "(no text)"
-        msg_preview = "%s\n```text\n%s\n```" % (msg, preview)
+        msg_preview = f"{msg}\n```text\n{preview}\n```"
         await interaction.response.send_message(msg_preview)
 
         donations, supplies, ledger = parse_log(raw)
@@ -173,7 +177,7 @@ def register_camp_commands(bot):
         end_str="End date (DD-MM-YYYY)",
     )
     async def logdonations_range_slash(
-        interaction: discord.Interaction,
+        interaction: discord.Interation,
         start_str: str,
         end_str: str,
     ):
@@ -190,17 +194,15 @@ def register_camp_commands(bot):
             )
             return
 
-        # Defer because reading + parsing logs can take time
         await interaction.response.defer(thinking=True)
 
-        raw = await build_raw_log_from_channel(interaction.client, start, end)
+        raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
         donations, supplies, ledger = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         donations_sec = [sections[0]]
 
-        # We've already deferred, so only followups
         await _send_sections_interaction(interaction, donations_sec, already_responded=True)
 
     @bot.tree.command(
@@ -212,7 +214,7 @@ def register_camp_commands(bot):
         end_str="End date (DD-MM-YYYY)",
     )
     async def logtotals_range_slash(
-        interaction: discord.Interaction,
+        interaction: discord.Interation,
         start_str: str,
         end_str: str,
     ):
@@ -229,10 +231,9 @@ def register_camp_commands(bot):
             )
             return
 
-        # Defer because reading + parsing logs can take time
         await interaction.response.defer(thinking=True)
 
-        raw = await build_raw_log_from_channel(interaction.client, start, end)
+        raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
         donations, supplies, ledger = parse_log(raw)
@@ -267,10 +268,9 @@ def register_camp_commands(bot):
             )
             return
 
-        # Defer because reading + parsing logs can take time
         await interaction.response.defer(thinking=True)
 
-        raw = await build_raw_log_from_channel(interaction.client, start, end)
+        raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
         donations, supplies, ledger = parse_log(raw)
@@ -305,15 +305,51 @@ def register_camp_commands(bot):
             )
             return
 
-        # ✅ Defer here to avoid "Unknown interaction" when log reading is slow
         await interaction.response.defer(thinking=True)
 
-        raw = await build_raw_log_from_channel(interaction.client, start, end)
+        raw = await build_camp_raw_log(interaction.client, start, end)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
         donations, supplies, ledger = parse_log(raw)
         sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
         ledger_sec = [sections[3]]
 
-        # ✅ We've already deferred, so use followups only
         await _send_sections_interaction(interaction, ledger_sec, already_responded=True)
+
+    @bot.tree.command(
+        name="logdelivery_range",
+        description="Show individual delivery/sale/purchase entries for a date range",
+    )
+    @app_commands.describe(
+        start_str="Start date (DD-MM-YYYY)",
+        end_str="End date (DD-MM-YYYY)",
+    )
+    async def logdelivery_range_slash(
+        interaction: discord.Interaction,
+        start_str: str,
+        end_str: str,
+    ):
+        if not await _ensure_command_channel(interaction):
+            return
+
+        try:
+            start = datetime.strptime(start_str, "%d-%m-%Y").date()
+            end = datetime.strptime(end_str, "%d-%m-%Y").date()
+        except Exception:
+            await interaction.response.send_message(
+                "❌ Use format: `DD-MM-YYYY` for both dates.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(thinking=True)
+
+        raw = await build_camp_raw_log(interaction.client, start, end)
+        guild = interaction.guild
+        id_to_name = _build_id_to_name(guild)
+        donations, supplies, ledger = parse_log(raw)
+
+        delivery_table = build_delivery_table(supplies, id_to_name)
+        await _send_sections_interaction(
+            interaction, [delivery_table], already_responded=True
+        )
