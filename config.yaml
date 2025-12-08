@@ -1,3 +1,18 @@
 discord:
+  
   token: "MTQ0MzM5NzczMDYyNDg2ODQ3Mw.GEjYwN.hPqjetMvfFQuyiYkYanmOPKL1gHDOqO0aas_-A"
-  log_channel_id: 123456789012345678
+
+  # Camp log channel (if you use it)
+  camp_log_channel_id: 123456789012345678
+
+  # Ranch log channel
+  ranch_log_channel_id: 1447063911084982454
+
+  # Command channel where /ranch commands are allowed
+  command_channel_id: 1442401333692072027
+
+# Prices for ranch items
+prices:
+  egg: 1.0
+  milk: 1.0
+
