@@ -9,25 +9,17 @@ import discord
 from discord import app_commands
 import yaml
 
-from chat_read import build_ranch_raw_log
+from chat_read import build_ranch_raw_log, COMMAND_CHANNEL_ID
 from ranch_out import (
     parse_ranch_log,
-    build_ranch_markdown_sections,          # still used by /ranch player
     build_ranchsummary_csv_bytes,
     build_ranch_player_markdown_sections,
 )
-
-# Commands only allowed here (same as camp_commands.py)
-COMMAND_CHANNEL_ID = 1442401333692072027
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.yml")
 
 
 def _chunk_text(text: str, limit: int = 1800):
-    """
-    Yield chunks of `text` that fit within the discord message limit
-    (leaving room for ``` fencing and a bit of padding).
-    """
     out = ""
     for ln in text.splitlines():
         if len(out) + len(ln) + 1 > limit:
@@ -44,10 +36,6 @@ async def _send_sections_interaction(
     sections: list[str],
     already_responded: bool = False,
 ):
-    """
-    Send a list of markdown sections as separate ```md blocks,
-    obeying Discord's 'only one initial response' rule.
-    """
     first_send = not already_responded
 
     for sec in sections:
@@ -58,7 +46,6 @@ async def _send_sections_interaction(
             msg = f"```md\n{chunk}\n```"
 
             if first_send:
-                # If we've not replied yet, use the initial response.
                 if already_responded:
                     await interaction.followup.send(msg)
                 else:
@@ -69,15 +56,11 @@ async def _send_sections_interaction(
 
 
 def _load_prices() -> dict:
-    """
-    Load prices for egg and milk from config.yml.
-    Defaults to 1.0 if missing.
-    """
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
     except Exception as e:
-        print(f"⚠ Failed to load config.yml in _load_prices: {e}")
+        print(f"⚠ [ranch_commands] Failed to load config.yml in _load_prices: {e}")
         cfg = {}
 
     prices_cfg = cfg.get("prices", {}) or {}
@@ -89,10 +72,6 @@ def _load_prices() -> dict:
 
 
 def _save_prices(prices: dict) -> None:
-    """
-    Save prices for egg and milk back to config.yml.
-    Keeps other config sections intact.
-    """
     try:
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -100,7 +79,7 @@ def _save_prices(prices: dict) -> None:
         except FileNotFoundError:
             cfg = {}
         except Exception as e:
-            print(f"⚠ Failed to load config.yml in _save_prices: {e}")
+            print(f"⚠ [ranch_commands] Failed to load config.yml in _save_prices: {e}")
             cfg = {}
 
         if not isinstance(cfg, dict):
@@ -116,14 +95,10 @@ def _save_prices(prices: dict) -> None:
             yaml.safe_dump(cfg, f, sort_keys=False)
 
     except Exception as e:
-        print(f"❌ Failed to save prices to config.yml: {e}")
+        print(f"❌ [ranch_commands] Failed to save prices to config.yml: {e}")
 
 
 def _parse_ddmmyyyy(s: str) -> date | None:
-    """
-    Parse a date string in DD-MM-YYYY format.
-    Returns a date or None if invalid.
-    """
     try:
         return datetime.strptime(s.strip(), "%d-%m-%Y").date()
     except Exception:
@@ -131,20 +106,11 @@ def _parse_ddmmyyyy(s: str) -> date | None:
 
 
 class RanchCommands(app_commands.Group):
-    """
-    Slash command group: /ranch ...
-    Register this group on your bot like:
-
-        bot.tree.add_command(RanchCommands(bot))
-    """
-
     def __init__(self, bot: discord.Client):
         super().__init__(name="ranch", description="Ranch log commands")
         self.bot = bot
 
-    # -----------------------------
-    # /ranch summary (with date range, CSV only)
-    # -----------------------------
+    # /ranch summary with date range, CSV only
     @app_commands.command(
         name="summary",
         description="Summarise ranch logs in a date range (DD-MM-YYYY) and output CSV only.",
@@ -159,7 +125,6 @@ class RanchCommands(app_commands.Group):
         start: str,
         end: str,
     ):
-        # Restrict usage to the command channel, just like camp_commands.py
         if interaction.channel_id != COMMAND_CHANNEL_ID:
             await interaction.response.send_message(
                 f"This command can only be used in <#{COMMAND_CHANNEL_ID}>.",
@@ -174,7 +139,6 @@ class RanchCommands(app_commands.Group):
             )
             return
 
-        # Parse dates before deferring (so we can send errors cleanly)
         start_date = _parse_ddmmyyyy(start)
         end_date = _parse_ddmmyyyy(end)
 
@@ -199,9 +163,11 @@ class RanchCommands(app_commands.Group):
             )
             return
 
-        # Heavy work -> defer
         await interaction.response.defer(thinking=True)
-        # From this point on we must use interaction.followup.*
+
+        print(
+            f"[ranch_commands] /ranch summary start={start_date}, end={end_date}"
+        )
 
         raw_log: str = await build_ranch_raw_log(
             self.bot,
@@ -209,18 +175,22 @@ class RanchCommands(app_commands.Group):
             end_date=end_date,
         )
 
+        print(f"[ranch_commands] raw_log length = {len(raw_log)}")
+
         events = parse_ranch_log(raw_log)
+
+        print(f"[ranch_commands] parsed events = {len(events)}")
 
         if not events:
             await interaction.followup.send(
-                f"No ranch events found between **{start}** and **{end}**."
+                f"No ranch events found between **{start}** and **{end}**.\n"
+                f"(debug: raw_log length={len(raw_log)})"
             )
             return
 
         prices = _load_prices()
         csv_bytes = build_ranchsummary_csv_bytes(events, prices)
 
-        # CSV filename in DD-MM-YYYY
         today_str = datetime.utcnow().strftime("%d-%m-%Y")
         csv_filename = f"ranch_summary_{start}_to_{end}_{today_str}.csv".replace(" ", "_")
         csv_file = discord.File(
@@ -230,14 +200,13 @@ class RanchCommands(app_commands.Group):
         await interaction.followup.send(
             content=(
                 f"Ranch summary CSV for **{start}** to **{end}**.\n"
-                f"Current prices: egg={prices['egg']:.2f}, milk={prices['milk']:.2f}"
+                f"Current prices: egg={prices['egg']:.2f}, milk={prices['milk']:.2f}\n"
+                f"(debug: events={len(events)})"
             ),
             file=csv_file,
         )
 
-    # -----------------------------
     # /ranch player
-    # -----------------------------
     @app_commands.command(
         name="player",
         description="Show ranch stats for a specific player (all time).",
@@ -250,7 +219,6 @@ class RanchCommands(app_commands.Group):
         interaction: discord.Interaction,
         member: discord.Member,
     ):
-        # Restrict usage to the command channel
         if interaction.channel_id != COMMAND_CHANNEL_ID:
             await interaction.response.send_message(
                 f"This command can only be used in <#{COMMAND_CHANNEL_ID}>.",
@@ -265,8 +233,9 @@ class RanchCommands(app_commands.Group):
             )
             return
 
-        # Might be heavy depending on log size -> defer
         await interaction.response.defer(thinking=True)
+
+        print(f"[ranch_commands] /ranch player member={member.id} {member}")
 
         raw_log: str = await build_ranch_raw_log(
             self.bot,
@@ -274,10 +243,17 @@ class RanchCommands(app_commands.Group):
             end_date=None,
         )
 
+        print(f"[ranch_commands] raw_log length = {len(raw_log)}")
+
         events = parse_ranch_log(raw_log)
 
+        print(f"[ranch_commands] parsed events = {len(events)}")
+
         if not events:
-            await interaction.followup.send("No ranch events found in the scanned logs.")
+            await interaction.followup.send(
+                "No ranch events found in the scanned logs.\n"
+                f"(debug: raw_log length={len(raw_log)})"
+            )
             return
 
         prices = _load_prices()
@@ -301,9 +277,7 @@ class RanchCommands(app_commands.Group):
             already_responded=True,
         )
 
-    # -----------------------------
     # /ranch setprice
-    # -----------------------------
     @app_commands.command(
         name="setprice",
         description="Set the price for eggs or milk. (Only 'egg' and 'milk' are allowed.)",
@@ -318,7 +292,6 @@ class RanchCommands(app_commands.Group):
         item: str,
         value: float,
     ):
-        # Restrict usage to the command channel
         if interaction.channel_id != COMMAND_CHANNEL_ID:
             await interaction.response.send_message(
                 f"This command can only be used in <#{COMMAND_CHANNEL_ID}>.",
