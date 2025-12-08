@@ -1,7 +1,7 @@
 # chat_read.py
 import os
 from datetime import date
-from typing import Optional, Tuple
+from typing import Optional
 
 import discord
 import yaml
@@ -23,7 +23,6 @@ def _load_config() -> dict:
     return {
         "camp_log_channel_id": int(discord_cfg.get("camp_log_channel_id", 0)),
         "ranch_log_channel_id": int(discord_cfg.get("ranch_log_channel_id", 0)),
-        # legacy name, kept for backward-compat if someone still uses it
         "log_channel_id": int(discord_cfg.get("log_channel_id", 0)),
         "command_channel_id": int(discord_cfg.get("command_channel_id", 0)),
     }
@@ -84,7 +83,6 @@ async def build_raw_log_from_channel(
     msgs = []
     total_msgs = 0
 
-    # oldest_first=True to keep chronological order
     async for m in channel.history(limit=5000, oldest_first=True):
         total_msgs += 1
         md = m.created_at.date()
@@ -136,18 +134,11 @@ async def build_raw_log_from_channel(
     return raw_log
 
 
-# ---------------------------------------------------------------------------
-# Convenience wrappers: camp + ranch
-# ---------------------------------------------------------------------------
-
 async def build_camp_raw_log(
     bot: discord.Client,
     start_date: Optional[date],
     end_date: Optional[date],
 ) -> str:
-    """
-    Wrapper for the old camp log, using CAMP_LOG_CHANNEL_ID.
-    """
     print("[chat_read] build_camp_raw_log called")
     return await build_raw_log_from_channel(bot, CAMP_LOG_CHANNEL_ID, start_date, end_date)
 
@@ -157,8 +148,5 @@ async def build_ranch_raw_log(
     start_date: Optional[date],
     end_date: Optional[date],
 ) -> str:
-    """
-    Wrapper for the new ranch log, using RANCH_LOG_CHANNEL_ID.
-    """
     print("[chat_read] build_ranch_raw_log called")
     return await build_raw_log_from_channel(bot, RANCH_LOG_CHANNEL_ID, start_date, end_date)
