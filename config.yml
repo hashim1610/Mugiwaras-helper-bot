@@ -2,8 +2,11 @@ discord:
   
   token: "MTQ0MzM5NzczMDYyNDg2ODQ3Mw.GEjYwN.hPqjetMvfFQuyiYkYanmOPKL1gHDOqO0aas_-A"
 
-  # Camp log channel (if you use it)
+  # Camp log channel 
   camp_log_channel_id: 1441867157570060379
+
+  # Camp log book channel 
+  camp_log_book_channel_id: 1441860278797996215
 
   # Ranch log channel
   ranch_log_channel_id: 1447063911084982454
