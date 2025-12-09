@@ -351,10 +351,13 @@ def build_markdown_sections(donations, supplies, ledger, deliveries, id_to_name=
         member_names.add(l["name"])
     total_member_count = len(member_names)
 
-    # 1) Donations table WITH totals row merged at bottom
-    sec1_lines: list[str] = []
+
+    # 1) Donations Breakdown + separate totals table
+
+    sec1_lines = []
     sec1_lines.append("🟥 Donations Breakdown Table Summary")
 
+    # Main donation rows
     donation_rows = [
         [
             display_name_from_mention(name, id_to_name),
@@ -364,20 +367,26 @@ def build_markdown_sections(donations, supplies, ledger, deliveries, id_to_name=
         for name, stats in sorted_don
     ]
 
-    # Append totals row at bottom
-    donation_rows.append([
-        f"Total Member Count: {total_member_count}",
-        total_count,
-        f"{total_mat:.2f}",
-    ])
-
-    sec1_lines.append(
-        make_table(
-            ["Name", "Donations", "Total Materials Value"],
-            donation_rows,
-            align_right={1, 2}
-        )
+    # Make main donations table
+    main_table = make_table(
+        ["Name", "Donations", "Total Materials Value"],
+        donation_rows,
+        align_right={1, 2},
     )
+
+    sec1_lines.append(main_table)
+
+    # Create separate totals table
+    totals_table = make_table(
+        ["Total Member Count", "Total Donations", "Total Materials Value"],
+        [[total_member_count, total_count, f"{total_mat:.2f}"]],
+        align_right={0, 1, 2},
+    )
+
+    # Add separator line for clarity
+    sec1_lines.append("\n-- totals --\n")
+    sec1_lines.append(totals_table)
+
     sections.append("\n\n".join(sec1_lines))
 
     # 2) Supplies (with Date column) – ONLY classic supplies
