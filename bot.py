@@ -1,10 +1,11 @@
 # bot.py
 import os
+import asyncio
 import discord
 from discord.ext import commands
 
 from camp_commands import register_camp_commands
-from ranch_commands import RanchCommands  # 👈 NEW
+from ranch_commands import RanchCommands  # /ranch group
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
@@ -19,7 +20,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Register all slash commands BEFORE syncing
 register_camp_commands(bot)
 
-# 👇 NEW: register the /ranch command group
+# Register the /ranch command group
 bot.tree.add_command(RanchCommands(bot))
 
 
@@ -40,5 +41,18 @@ async def on_ready():
         print(f"❌ Failed to sync slash commands: {e}")
 
 
+async def main():
+    async with bot:
+        # 👇 Load the mission command set (mission + mission_legacy)
+        # If mission_commands.py is next to bot.py, this is correct:
+        await bot.load_extension("mission_commands")
+
+        # If instead you put it in a "cogs" folder as cogs/mission_commands.py,
+        # use this line instead:
+        # await bot.load_extension("cogs.mission_commands")
+
+        await bot.start(TOKEN)
+
+
 if __name__ == "__main__":
-    bot.run(TOKEN)
+    asyncio.run(main())
