@@ -6,9 +6,9 @@ Parsing + markdown + CSV output for camp log commands.
 
 Exports:
 - parse_log(raw_log)
-- build_markdown_sections(donations, supplies, ledger, id_to_name)
+- build_markdown_sections(donations, supplies, ledger, deliveries, id_to_name)
 - build_delivery_table(deliveries, id_to_name)
-- build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name)
+- build_logsummary_csv_bytes(donations, supplies, ledger, deliveries, id_to_name)
 """
 
 import re
@@ -129,7 +129,7 @@ def parse_log(raw_log: str):
 
     Rules:
       - "Donated ... Materials added ..." → donations
-      - "Delivered Supplies ..." → supplies
+      - "Delivered Supplies ..."          → supplies
       - "Deposited to/Withdrew from clan ledger" → ledger
       - "Made a Sale Of 100 Of Stock For $1600" → ledger (Deposit) + deliveries
       - "Bought a hunting wagon for $1000"      → ledger (Withdrawal) ONLY
@@ -211,8 +211,7 @@ def parse_log(raw_log: str):
                         "transition": "Withdrawal",
                         "amount": -abs(value),
                         "date": current_date,
-                        # item is not used in tables, but could be stored if needed
-                        # "item": item,
+                        # item could be stored if needed
                     })
 
         # ---------------- EXISTING PATTERNS: DONATIONS / SUPPLIES / LEDGER ----------------
@@ -314,13 +313,13 @@ def make_table(headers, rows, align_right=None) -> str:
     return "\n".join(result)
 
 
-def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
+def build_markdown_sections(donations, supplies, ledger, deliveries, id_to_name=None):
     """
-    Returns a list of 4 markdown sections:
-      0: Donations breakdown
-      1: Overall totals (with total member count)
-      2: Supply summary (WITH date) – ONLY classic supplies
-      3: Ledger transactions (WITH date, negative withdrawals)
+    Returns a list of markdown sections:
+      0: Donations Breakdown (with totals row at bottom)
+      1: Supply Mission Summary (ONLY classic supplies)
+      2: Delivery Mission Summary (stock sale missions)
+      3: Ledger Transactions (WITH date, negative withdrawals)
     """
     sections: list[str] = []
 
@@ -342,7 +341,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     total_count = sum(v["count"] for v in donation_map.values())
     total_mat = sum(v["total"] for v in donation_map.values())
 
-    # Total members in this date range
+    # Total members in this date range (donations + supplies + ledger)
     member_names = set()
     for d in donations:
         member_names.add(d["name"])
@@ -352,7 +351,7 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
         member_names.add(l["name"])
     total_member_count = len(member_names)
 
-    # 1) Donations table
+    # 1) Donations table WITH totals row merged at bottom
     sec1_lines: list[str] = []
     sec1_lines.append("🟥 Donations Breakdown Table Summary")
 
@@ -365,6 +364,13 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
         for name, stats in sorted_don
     ]
 
+    # Append totals row at bottom
+    donation_rows.append([
+        f"Total Member Count: {total_member_count}",
+        total_count,
+        f"{total_mat:.2f}",
+    ])
+
     sec1_lines.append(
         make_table(
             ["Name", "Donations", "Total Materials Value"],
@@ -374,21 +380,9 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
     )
     sections.append("\n\n".join(sec1_lines))
 
-    # 2) Overall Totals
+    # 2) Supplies (with Date column) – ONLY classic supplies
     sec2_lines: list[str] = []
-    sec2_lines.append("🟦 Overall Totals")
-    sec2_lines.append(
-        make_table(
-            ["Total Donations", "Total Materials Value", "Total Member Count"],
-            [[total_count, f"{total_mat:.2f}", total_member_count]],
-            align_right={0, 1, 2}
-        )
-    )
-    sections.append("\n\n".join(sec2_lines))
-
-    # 3) Supplies (with Date column) – ONLY classic supplies
-    sec3_lines: list[str] = []
-    sec3_lines.append("🟩 Supply Mission Summary")
+    sec2_lines.append("🟩 Supply Mission Summary")
 
     supply_rows = []
     for s in supplies:
@@ -396,11 +390,32 @@ def build_markdown_sections(donations, supplies, ledger, id_to_name=None):
         name = display_name_from_mention(s["name"], id_to_name)
         supply_rows.append([date_str, name, f"{s['amount']:.2f}"])
 
-    sec3_lines.append(
+    sec2_lines.append(
         make_table(
             ["Date", "Name", "Supplies Delivered"],
             supply_rows,
             align_right={2}
+        )
+    )
+    sections.append("\n\n".join(sec2_lines))
+
+    # 3) Delivery Mission Summary (stock sale missions)
+    sec3_lines: list[str] = []
+    sec3_lines.append("🟧 Delivery Mission Summary")
+
+    delivery_rows = []
+    for d in deliveries:
+        date_str = d.get("date") or ""
+        name = display_name_from_mention(d["name"], id_to_name)
+        items = d.get("items") or ""
+        value = d.get("value", 0.0)
+        delivery_rows.append([date_str, name, items, f"{value:.2f}"])
+
+    sec3_lines.append(
+        make_table(
+            ["Date", "Name", "Items", "Value"],
+            delivery_rows,
+            align_right={3}
         )
     )
     sections.append("\n\n".join(sec3_lines))
@@ -451,12 +466,12 @@ def build_delivery_table(deliveries, id_to_name=None) -> str:
     )
 
 
-def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None) -> bytes:
+def build_logsummary_csv_bytes(donations, supplies, ledger, deliveries, id_to_name=None) -> bytes:
     """
-    Build a CSV that mirrors your 4 sections:
-      - Donations Breakdown (aggregated)
-      - Overall Totals (with Total Members)
+    Build a CSV that mirrors your sections:
+      - Donations Breakdown (with totals row at bottom)
       - Supply Mission Summary (with Date) – ONLY classic supplies
+      - Delivery Mission Summary (stock sale missions)
       - Ledger Transactions (with Date)
 
     Returns CSV data as bytes (UTF-8), ready for discord.File().
@@ -501,12 +516,12 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None) -> 
             stats["count"],
             f"{stats['total']:.2f}",
         ])
-    writer.writerow([])
-
-    # Overall totals
-    writer.writerow(["Overall Totals"])
-    writer.writerow(["Total Donations", "Total Materials Value", "Total Members"])
-    writer.writerow([total_count, f"{total_mat:.2f}", total_member_count])
+    # Totals row
+    writer.writerow([
+        f"Total Member Count: {total_member_count}",
+        total_count,
+        f"{total_mat:.2f}",
+    ])
     writer.writerow([])
 
     # Supply summary WITH Date – ONLY classic supplies
@@ -516,6 +531,17 @@ def build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name=None) -> 
         disp_name = display_name_from_mention(s["name"], id_to_name)
         date_str = s.get("date") or ""
         writer.writerow([date_str, disp_name, f"{s['amount']:.2f}"])
+    writer.writerow([])
+
+    # Delivery Mission Summary
+    writer.writerow(["Delivery Mission Summary"])
+    writer.writerow(["Date", "Name", "Items", "Value"])
+    for d in deliveries:
+        disp_name = display_name_from_mention(d["name"], id_to_name)
+        date_str = d.get("date") or ""
+        items = d.get("items") or ""
+        value = d.get("value", 0.0)
+        writer.writerow([date_str, disp_name, items, f"{value:.2f}"])
     writer.writerow([])
 
     # Ledger transactions WITH Date
