@@ -4,15 +4,29 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-import yaml  # 👈 for reading config.yml
+import yaml
+from pathlib import Path
 
 # --------------------------------------------------------------
-# LOAD CONFIG.YML DIRECTLY
+# LOAD CONFIG.YML AND CAMP LOG BOOK CHANNEL ID
 # --------------------------------------------------------------
-with open("config.yml", "r", encoding="utf-8") as f:
-    CONFIG = yaml.safe_load(f)
+CONFIG_PATH = Path("config.yml")
 
-CAMP_LOG_BOOK_CHANNEL_ID = int(CONFIG["camp_log_book_channel_id"])
+if not CONFIG_PATH.exists():
+    raise RuntimeError("config.yml not found next to mission_commands.py")
+
+with CONFIG_PATH.open("r", encoding="utf-8") as f:
+    CONFIG = yaml.safe_load(f) or {}
+
+discord_cfg = CONFIG.get("discord", {})
+camp_log_book_raw = discord_cfg.get("camp_log_book_channel_id")
+
+if camp_log_book_raw is None:
+    raise RuntimeError(
+        "Missing 'discord.camp_log_book_channel_id' in config.yml"
+    )
+
+CAMP_LOG_BOOK_CHANNEL_ID = int(camp_log_book_raw)
 
 MISSION_SEPARATOR = "-" * 53
 
