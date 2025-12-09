@@ -35,7 +35,6 @@ MISSION_SEPARATOR = "-" * 53
 # CHANNEL CHECK — restrict commands to ONE channel
 # --------------------------------------------------------------
 def in_log_book_channel(interaction: discord.Interaction) -> bool:
-    # Only allow commands in the configured channel
     return interaction.channel_id == CAMP_LOG_BOOK_CHANNEL_ID
 
 
@@ -49,7 +48,7 @@ class MissionCommands(commands.Cog):
     # Slash command groups
     mission = app_commands.Group(
         name="mission",
-        description="Mission utilities (supply, delivery, week banners)."
+        description="Mission utilities (supply & delivery)."
     )
 
     mission_legacy = app_commands.Group(
@@ -65,18 +64,6 @@ class MissionCommands(commands.Cog):
             f"{mission_type}\n"
             f">> {participants}\n"
             f"{MISSION_SEPARATOR}"
-        )
-
-    def build_week_banner(self, week: int, year: int, opened: bool) -> str:
-        if opened:
-            status_line = f"-🟢\n WEEK {week} of {year} - OPENED 🟢\n-"
-        else:
-            status_line = f"-❌\n WEEK {week} of {year} - CLOSED ❌\n-"
-
-        return (
-            "---------------------------------------\n"
-            f"{status_line}\n"
-            "---------------------------------------"
         )
 
     # ----------------------------------------------------------
@@ -128,71 +115,11 @@ class MissionCommands(commands.Cog):
         )
 
     # ----------------------------------------------------------
-    # /mission week_open
-    # ----------------------------------------------------------
-    @mission.command(
-        name="week_open",
-        description="Post the WEEK OPENED banner."
-    )
-    @app_commands.check(in_log_book_channel)
-    @app_commands.describe(
-        week="ISO week number",
-        year="Year (leave empty to use current year)"
-    )
-    async def mission_week_open(
-        self,
-        interaction: discord.Interaction,
-        week: int,
-        year: int | None = None
-    ):
-        from datetime import datetime
-        if year is None:
-            year = datetime.utcnow().year
-
-        text = self.build_week_banner(week, year, opened=True)
-        await interaction.channel.send(text)
-
-        await interaction.response.send_message(
-            f"🟢 Logged WEEK {week} OPENED.",
-            ephemeral=True
-        )
-
-    # ----------------------------------------------------------
-    # /mission week_close
-    # ----------------------------------------------------------
-    @mission.command(
-        name="week_close",
-        description="Post the WEEK CLOSED banner."
-    )
-    @app_commands.check(in_log_book_channel)
-    @app_commands.describe(
-        week="ISO week number",
-        year="Year (leave empty to use current year)"
-    )
-    async def mission_week_close(
-        self,
-        interaction: discord.Interaction,
-        week: int,
-        year: int | None = None
-    ):
-        from datetime import datetime
-        if year is None:
-            year = datetime.utcnow().year
-
-        text = self.build_week_banner(week, year, opened=False)
-        await interaction.channel.send(text)
-
-        await interaction.response.send_message(
-            f"❌ Logged WEEK {week} CLOSED.",
-            ephemeral=True
-        )
-
-    # ----------------------------------------------------------
     # /mission_legacy supply
     # ----------------------------------------------------------
     @mission_legacy.command(
         name="supply",
-        description="Backfill an older SUPPLY MISSION with a manual date."
+        description="Backfill a SUPPLY MISSION with a manual date."
     )
     @app_commands.check(in_log_book_channel)
     @app_commands.describe(
@@ -220,11 +147,11 @@ class MissionCommands(commands.Cog):
     # ----------------------------------------------------------
     @mission_legacy.command(
         name="delivery",
-        description="Backfill an older DELIVERY MISSION with a manual date."
+        description="Backfill a DELIVERY MISSION with a manual date."
     )
     @app_commands.check(in_log_book_channel)
     @app_commands.describe(
-        date_text="Original date/time",
+        date_text="Original date/time (example: '12/05/2025 10:32 PM')",
         participants="Mention players"
     )
     async def mission_delivery_legacy(
