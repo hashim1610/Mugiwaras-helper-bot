@@ -14,9 +14,9 @@ from camp_out import (
 
 
 # -------------------------------------------------------------
-# Utility: Build mention → display name dict
+# Utility: Build mention → display name map
 # -------------------------------------------------------------
-def _build_id_to_name(guild):
+def _build_id_to_name(guild: discord.Guild | None):
     if not guild:
         return {}
     return {str(m.id): m.display_name for m in guild.members}
@@ -25,7 +25,7 @@ def _build_id_to_name(guild):
 # -------------------------------------------------------------
 # Markdown chunking
 # -------------------------------------------------------------
-def _chunk_text(text, limit=1800):
+def _chunk_text(text: str, limit: int = 1800):
     out = ""
     for ln in text.splitlines():
         if len(out) + len(ln) + 1 > limit:
@@ -39,7 +39,18 @@ def _chunk_text(text, limit=1800):
 # -------------------------------------------------------------
 # Interaction sender (supports multiple sections)
 # -------------------------------------------------------------
-async def _send_sections_interaction(interaction, sections, already_responded=False):
+async def _send_sections_interaction(
+    interaction: discord.Interaction,
+    sections,
+    already_responded: bool = False,
+):
+    """
+    If already_responded=False:
+      - first chunk uses interaction.response.send_message()
+      - remaining use interaction.followup.send()
+    If already_responded=True:
+      - all use interaction.followup.send()
+    """
     first_send = not already_responded
 
     for sec in sections:
@@ -48,7 +59,6 @@ async def _send_sections_interaction(interaction, sections, already_responded=Fa
 
         for chunk in _chunk_text(sec):
             msg = f"```md\n{chunk.strip()}\n```"
-
             if first_send:
                 await interaction.response.send_message(msg)
                 first_send = False
@@ -59,7 +69,11 @@ async def _send_sections_interaction(interaction, sections, already_responded=Fa
 # -------------------------------------------------------------
 # Channel restriction
 # -------------------------------------------------------------
-async def _ensure_command_channel(interaction):
+async def _ensure_command_channel(interaction: discord.Interaction) -> bool:
+    """
+    Ensure the command is used in the correct channel (COMMAND_CHANNEL_ID).
+    If not, send an ephemeral error and return False.
+    """
     if interaction.channel_id != COMMAND_CHANNEL_ID:
         await interaction.response.send_message(
             f"❌ This command can only be used in <#{COMMAND_CHANNEL_ID}>.",
@@ -72,7 +86,7 @@ async def _ensure_command_channel(interaction):
 # -------------------------------------------------------------
 # REGISTER ALL CAMP COMMANDS
 # -------------------------------------------------------------
-def register_camp_commands(bot):
+def register_camp_commands(bot: discord.Client):
     """
     Registers all /camp_* commands to the bot.
     """
@@ -100,27 +114,27 @@ def register_camp_commands(bot):
         try:
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except:
+        except Exception:
             await interaction.response.send_message(
                 "❌ Use format: `DD-MM-YYYY` for both dates.",
                 ephemeral=True,
             )
             return
 
+        # Defer early because this can be heavy
         await interaction.response.defer(thinking=True)
 
         # Read logs
         raw = await build_camp_raw_log(interaction.client, start, end)
-
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
 
-        # Parse
-        donations, supplies, deliveries, ledger = parse_log(raw)
+        # Parse (NOTE: order matches camp_out.parse_log)
+        donations, supplies, ledger, deliveries = parse_log(raw)
 
-        # Build CSV
+        # Build CSV (NOTE: argument order matches camp_out.build_logsummary_csv_bytes)
         csv_bytes = build_logsummary_csv_bytes(
-            donations, supplies, deliveries, ledger, id_to_name
+            donations, supplies, ledger, deliveries, id_to_name
         )
 
         filename = f"camp_report_{start_str}_to_{end_str}.csv"
@@ -153,14 +167,14 @@ def register_camp_commands(bot):
         try:
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except:
+        except Exception:
             await interaction.response.send_message(
                 "❌ Use format `DD-MM-YYYY`",
                 ephemeral=True,
             )
             return
 
-        # Read full text
+        # Read text (should be fast enough to not defer, but it's okay)
         raw = await build_camp_raw_log(interaction.client, start, end)
 
         preview = raw[:800] or "(no text)"
@@ -168,18 +182,23 @@ def register_camp_commands(bot):
             f"Fetched {len(raw)} chars\n```text\n{preview}\n```"
         )
 
-        donations, supplies, deliveries, ledger = parse_log(raw)
+        # Parse
+        donations, supplies, ledger, deliveries = parse_log(raw)
 
         await interaction.followup.send(
-            f"Parsed:\nDonations: {len(donations)}\nSupplies: {len(supplies)}"
-            f"\nDeliveries: {len(deliveries)}\nLedger: {len(ledger)}"
+            "Parsed:\nDonations: {d}\nSupplies: {s}\nLedger: {l}\nDeliveries: {x}".format(
+                d=len(donations),
+                s=len(supplies),
+                l=len(ledger),
+                x=len(deliveries),
+            )
         )
 
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
 
         sections = build_markdown_sections(
-            donations, supplies, deliveries, ledger, id_to_name
+            donations, supplies, ledger, deliveries, id_to_name
         )
 
         await _send_sections_interaction(
@@ -208,25 +227,30 @@ def register_camp_commands(bot):
         try:
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except:
+        except Exception:
             await interaction.response.send_message(
                 "❌ Format must be DD-MM-YYYY",
                 ephemeral=True,
             )
             return
 
-        raw = await build_camp_raw_log(interaction.client, start, end)
+        # Defer before heavy log reading/parsing
+        await interaction.response.defer(thinking=True)
 
-        donations, supplies, deliveries, ledger = parse_log(raw)
+        raw = await build_camp_raw_log(interaction.client, start, end)
+        donations, supplies, ledger, deliveries = parse_log(raw)
+
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
 
         sections = build_markdown_sections(
-            donations, supplies, deliveries, ledger, id_to_name
+            donations, supplies, ledger, deliveries, id_to_name
         )
 
         # Donations is section index 0
-        await _send_sections_interaction(interaction, [sections[0]])
+        await _send_sections_interaction(
+            interaction, [sections[0]], already_responded=True
+        )
 
     # ---------------------------------------------------------
     # /camp_supplies
@@ -250,32 +274,36 @@ def register_camp_commands(bot):
         try:
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except:
+        except Exception:
             await interaction.response.send_message(
                 "❌ Format: DD-MM-YYYY",
                 ephemeral=True,
             )
             return
 
-        raw = await build_camp_raw_log(interaction.client, start, end)
+        await interaction.response.defer(thinking=True)
 
-        donations, supplies, deliveries, ledger = parse_log(raw)
+        raw = await build_camp_raw_log(interaction.client, start, end)
+        donations, supplies, ledger, deliveries = parse_log(raw)
+
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
 
         sections = build_markdown_sections(
-            donations, supplies, deliveries, ledger, id_to_name
+            donations, supplies, ledger, deliveries, id_to_name
         )
 
-        # Supplies is now section index 1
-        await _send_sections_interaction(interaction, [sections[1]])
+        # Supplies is section index 1
+        await _send_sections_interaction(
+            interaction, [sections[1]], already_responded=True
+        )
 
     # ---------------------------------------------------------
     # /camp_deliveries
     # ---------------------------------------------------------
     @bot.tree.command(
         name="camp_deliveries",
-        description="Show only Delivery Mission Summary (Stock Sales).",
+        description="Show only Delivery Mission Summary (stock sales).",
     )
     @app_commands.describe(
         start_str="Start date (DD-MM-YYYY)",
@@ -292,25 +320,29 @@ def register_camp_commands(bot):
         try:
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except:
+        except Exception:
             await interaction.response.send_message(
                 "❌ Format must be DD-MM-YYYY",
                 ephemeral=True,
             )
             return
 
-        raw = await build_camp_raw_log(interaction.client, start, end)
+        await interaction.response.defer(thinking=True)
 
-        donations, supplies, deliveries, ledger = parse_log(raw)
+        raw = await build_camp_raw_log(interaction.client, start, end)
+        donations, supplies, ledger, deliveries = parse_log(raw)
+
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
 
         sections = build_markdown_sections(
-            donations, supplies, deliveries, ledger, id_to_name
+            donations, supplies, ledger, deliveries, id_to_name
         )
 
-        # Deliveries is now section index 2
-        await _send_sections_interaction(interaction, [sections[2]])
+        # Deliveries is section index 2
+        await _send_sections_interaction(
+            interaction, [sections[2]], already_responded=True
+        )
 
     # ---------------------------------------------------------
     # /camp_ledger
@@ -334,22 +366,26 @@ def register_camp_commands(bot):
         try:
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except:
+        except Exception:
             await interaction.response.send_message(
                 "❌ Date must be DD-MM-YYYY",
                 ephemeral=True,
             )
             return
 
-        raw = await build_camp_raw_log(interaction.client, start, end)
+        await interaction.response.defer(thinking=True)
 
-        donations, supplies, deliveries, ledger = parse_log(raw)
+        raw = await build_camp_raw_log(interaction.client, start, end)
+        donations, supplies, ledger, deliveries = parse_log(raw)
+
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
 
         sections = build_markdown_sections(
-            donations, supplies, deliveries, ledger, id_to_name
+            donations, supplies, ledger, deliveries, id_to_name
         )
 
-        # Ledger is now section index 3
-        await _send_sections_interaction(interaction, [sections[3]])
+        # Ledger is section index 3
+        await _send_sections_interaction(
+            interaction, [sections[3]], already_responded=True
+        )
