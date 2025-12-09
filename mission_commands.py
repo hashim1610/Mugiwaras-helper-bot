@@ -4,10 +4,13 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
+import yaml  # 👈 for reading config.yml
+
 # --------------------------------------------------------------
-# LOAD CONFIG (adjust import if your project loads config differently)
+# LOAD CONFIG.YML DIRECTLY
 # --------------------------------------------------------------
-from config import CONFIG   # <--- change this if needed
+with open("config.yml", "r", encoding="utf-8") as f:
+    CONFIG = yaml.safe_load(f)
 
 CAMP_LOG_BOOK_CHANNEL_ID = int(CONFIG["camp_log_book_channel_id"])
 
@@ -18,6 +21,7 @@ MISSION_SEPARATOR = "-" * 53
 # CHANNEL CHECK — restrict commands to ONE channel
 # --------------------------------------------------------------
 def in_log_book_channel(interaction: discord.Interaction) -> bool:
+    # Only allow commands in the configured channel
     return interaction.channel_id == CAMP_LOG_BOOK_CHANNEL_ID
 
 
