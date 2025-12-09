@@ -5,24 +5,26 @@ import io
 import discord
 from discord import app_commands
 
-from chat_read import build_camp_raw_log
+from chat_read import COMMAND_CHANNEL_ID, build_camp_raw_log
 from camp_out import (
     parse_log,
     build_markdown_sections,
-    build_delivery_table,
     build_logsummary_csv_bytes,
 )
 
-# Commands only allowed here:
-COMMAND_CHANNEL_ID = 1442401333692072027
 
-
-def _build_id_to_name(guild: discord.Guild | None):
+# -------------------------------------------------------------
+# Utility: Build mention → display name dict
+# -------------------------------------------------------------
+def _build_id_to_name(guild):
     if not guild:
         return {}
     return {str(m.id): m.display_name for m in guild.members}
 
 
+# -------------------------------------------------------------
+# Markdown chunking
+# -------------------------------------------------------------
 def _chunk_text(text, limit=1800):
     out = ""
     for ln in text.splitlines():
@@ -34,23 +36,19 @@ def _chunk_text(text, limit=1800):
         yield out
 
 
-async def _send_sections_interaction(
-    interaction: discord.Interaction,
-    sections,
-    already_responded: bool = False,
-):
-    """
-    Send one or more markdown sections.
-    - If already_responded is False: first chunk uses interaction.response.send_message()
-    - If already_responded is True: all chunks use interaction.followup.send()
-    """
+# -------------------------------------------------------------
+# Interaction sender (supports multiple sections)
+# -------------------------------------------------------------
+async def _send_sections_interaction(interaction, sections, already_responded=False):
     first_send = not already_responded
 
     for sec in sections:
         if not sec.strip():
             continue
+
         for chunk in _chunk_text(sec):
             msg = f"```md\n{chunk.strip()}\n```"
+
             if first_send:
                 await interaction.response.send_message(msg)
                 first_send = False
@@ -58,11 +56,10 @@ async def _send_sections_interaction(
                 await interaction.followup.send(msg)
 
 
-async def _ensure_command_channel(interaction: discord.Interaction) -> bool:
-    """
-    Ensure the command is used in the correct channel (COMMAND_CHANNEL_ID).
-    If not, send an ephemeral error and return False.
-    """
+# -------------------------------------------------------------
+# Channel restriction
+# -------------------------------------------------------------
+async def _ensure_command_channel(interaction):
     if interaction.channel_id != COMMAND_CHANNEL_ID:
         await interaction.response.send_message(
             f"❌ This command can only be used in <#{COMMAND_CHANNEL_ID}>.",
@@ -72,20 +69,26 @@ async def _ensure_command_channel(interaction: discord.Interaction) -> bool:
     return True
 
 
-def register_camp_commands(bot: discord.Client):
+# -------------------------------------------------------------
+# REGISTER ALL CAMP COMMANDS
+# -------------------------------------------------------------
+def register_camp_commands(bot):
     """
-    Attach all / commands to the given bot.
+    Registers all /camp_* commands to the bot.
     """
 
+    # ---------------------------------------------------------
+    # /camp_report  (CSV output)
+    # ---------------------------------------------------------
     @bot.tree.command(
-        name="logsummary_range",
-        description="Summarize logs between two dates (CSV file output)",
+        name="camp_report",
+        description="Generate full camp log report as CSV for a date range.",
     )
     @app_commands.describe(
         start_str="Start date (DD-MM-YYYY)",
         end_str="End date (DD-MM-YYYY)",
     )
-    async def logsummary_range_slash(
+    async def camp_report_slash(
         interaction: discord.Interaction,
         start_str: str,
         end_str: str,
@@ -93,42 +96,53 @@ def register_camp_commands(bot: discord.Client):
         if not await _ensure_command_channel(interaction):
             return
 
+        # Parse date
         try:
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except Exception:
+        except:
             await interaction.response.send_message(
                 "❌ Use format: `DD-MM-YYYY` for both dates.",
                 ephemeral=True,
             )
             return
 
-        # Defer so we don't hit the 3s timeout
         await interaction.response.defer(thinking=True)
 
+        # Read logs
         raw = await build_camp_raw_log(interaction.client, start, end)
+
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
 
-        donations, supplies, ledger, deliveries = parse_log(raw)
-        csv_bytes = build_logsummary_csv_bytes(donations, supplies, ledger, id_to_name)
-        filename = f"logsummary_{start_str}_to_{end_str}.csv"
+        # Parse
+        donations, supplies, deliveries, ledger = parse_log(raw)
+
+        # Build CSV
+        csv_bytes = build_logsummary_csv_bytes(
+            donations, supplies, deliveries, ledger, id_to_name
+        )
+
+        filename = f"camp_report_{start_str}_to_{end_str}.csv"
         file = discord.File(io.BytesIO(csv_bytes), filename=filename)
 
         await interaction.followup.send(
-            "📄 Here is your CSV log summary:",
+            "📄 Camp Report CSV is ready:",
             file=file,
         )
 
+    # ---------------------------------------------------------
+    # /camp_debug
+    # ---------------------------------------------------------
     @bot.tree.command(
-        name="logdebug_range",
-        description="Debug + summarize logs between two dates",
+        name="camp_debug",
+        description="Debug camp logs: show preview + parsed stats + full markdown.",
     )
     @app_commands.describe(
         start_str="Start date (DD-MM-YYYY)",
         end_str="End date (DD-MM-YYYY)",
     )
-    async def logdebug_range_slash(
+    async def camp_debug_slash(
         interaction: discord.Interaction,
         start_str: str,
         end_str: str,
@@ -139,44 +153,51 @@ def register_camp_commands(bot: discord.Client):
         try:
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except Exception:
+        except:
             await interaction.response.send_message(
-                "❌ Use format: `DD-MM-YYYY` for both dates.",
+                "❌ Use format `DD-MM-YYYY`",
                 ephemeral=True,
             )
             return
 
+        # Read full text
         raw = await build_camp_raw_log(interaction.client, start, end)
 
-        msg = f"Fetched {len(raw)} chars"
         preview = raw[:800] or "(no text)"
-        msg_preview = f"{msg}\n```text\n{preview}\n```"
-        await interaction.response.send_message(msg_preview)
+        await interaction.response.send_message(
+            f"Fetched {len(raw)} chars\n```text\n{preview}\n```"
+        )
 
-        donations, supplies, ledger, deliveries = parse_log(raw)
+        donations, supplies, deliveries, ledger = parse_log(raw)
+
         await interaction.followup.send(
-            "Parsed:\nDonations: %d\nSupplies: %d\nLedger: %d\nDeliveries: %d"
-            % (len(donations), len(supplies), len(ledger), len(deliveries))
+            f"Parsed:\nDonations: {len(donations)}\nSupplies: {len(supplies)}"
+            f"\nDeliveries: {len(deliveries)}\nLedger: {len(ledger)}"
         )
 
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
-        sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
 
-        # Already responded once, so only use followups now
+        sections = build_markdown_sections(
+            donations, supplies, deliveries, ledger, id_to_name
+        )
+
         await _send_sections_interaction(
             interaction, sections, already_responded=True
         )
 
+    # ---------------------------------------------------------
+    # /camp_donations
+    # ---------------------------------------------------------
     @bot.tree.command(
-        name="logdonations_range",
-        description="Show only Donations section for a date range",
+        name="camp_donations",
+        description="Show only the Donations Breakdown (with totals).",
     )
     @app_commands.describe(
         start_str="Start date (DD-MM-YYYY)",
         end_str="End date (DD-MM-YYYY)",
     )
-    async def logdonations_range_slash(
+    async def camp_donations_slash(
         interaction: discord.Interaction,
         start_str: str,
         end_str: str,
@@ -187,169 +208,148 @@ def register_camp_commands(bot: discord.Client):
         try:
             start = datetime.strptime(start_str, "%d-%m-%Y").date()
             end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except Exception:
+        except:
             await interaction.response.send_message(
-                "❌ Use format: `DD-MM-YYYY` for both dates.",
+                "❌ Format must be DD-MM-YYYY",
                 ephemeral=True,
             )
             return
 
-        await interaction.response.defer(thinking=True)
-
         raw = await build_camp_raw_log(interaction.client, start, end)
+
+        donations, supplies, deliveries, ledger = parse_log(raw)
         guild = interaction.guild
         id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger, deliveries = parse_log(raw)
-        sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
-        donations_sec = [sections[0]]
 
-        await _send_sections_interaction(interaction, donations_sec, already_responded=True)
-
-    @bot.tree.command(
-        name="logtotals_range",
-        description="Show only Overall Totals for a date range",
-    )
-    @app_commands.describe(
-        start_str="Start date (DD-MM-YYYY)",
-        end_str="End date (DD-MM-YYYY)",
-    )
-    async def logtotals_range_slash(
-        interaction: discord.Interaction,
-        start_str: str,
-        end_str: str,
-    ):
-        if not await _ensure_command_channel(interaction):
-            return
-
-        try:
-            start = datetime.strptime(start_str, "%d-%m-%Y").date()
-            end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except Exception:
-            await interaction.response.send_message(
-                "❌ Use format: `DD-MM-YYYY` for both dates.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer(thinking=True)
-
-        raw = await build_camp_raw_log(interaction.client, start, end)
-        guild = interaction.guild
-        id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger, deliveries = parse_log(raw)
-        sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
-        totals_sec = [sections[1]]
-
-        await _send_sections_interaction(interaction, totals_sec, already_responded=True)
-
-    @bot.tree.command(
-        name="logsupply_range",
-        description="Show only Supply section for a date range",
-    )
-    @app_commands.describe(
-        start_str="Start date (DD-MM-YYYY)",
-        end_str="End date (DD-MM-YYYY)",
-    )
-    async def logsupply_range_slash(
-        interaction: discord.Interaction,
-        start_str: str,
-        end_str: str,
-    ):
-        if not await _ensure_command_channel(interaction):
-            return
-
-        try:
-            start = datetime.strptime(start_str, "%d-%m-%Y").date()
-            end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except Exception:
-            await interaction.response.send_message(
-                "❌ Use format: `DD-MM-YYYY` for both dates.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer(thinking=True)
-
-        raw = await build_camp_raw_log(interaction.client, start, end)
-        guild = interaction.guild
-        id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger, deliveries = parse_log(raw)
-        sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
-        supply_sec = [sections[2]]
-
-        await _send_sections_interaction(interaction, supply_sec, already_responded=True)
-
-    @bot.tree.command(
-        name="logledger_range",
-        description="Show only Ledger section for a date range",
-    )
-    @app_commands.describe(
-        start_str="Start date (DD-MM-YYYY)",
-        end_str="End date (DD-MM-YYYY)",
-    )
-    async def logledger_range_slash(
-        interaction: discord.Interaction,
-        start_str: str,
-        end_str: str,
-    ):
-        if not await _ensure_command_channel(interaction):
-            return
-
-        try:
-            start = datetime.strptime(start_str, "%d-%m-%Y").date()
-            end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except Exception:
-            await interaction.response.send_message(
-                "❌ Use format: `DD-MM-YYYY` for both dates.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer(thinking=True)
-
-        raw = await build_camp_raw_log(interaction.client, start, end)
-        guild = interaction.guild
-        id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger, deliveries = parse_log(raw)
-        sections = build_markdown_sections(donations, supplies, ledger, id_to_name)
-        ledger_sec = [sections[3]]
-
-        await _send_sections_interaction(interaction, ledger_sec, already_responded=True)
-
-    @bot.tree.command(
-        name="logdelivery_range",
-        description="Show delivery missions (stock sales) for a date range",
-    )
-    @app_commands.describe(
-        start_str="Start date (DD-MM-YYYY)",
-        end_str="End date (DD-MM-YYYY)",
-    )
-    async def logdelivery_range_slash(
-        interaction: discord.Interaction,
-        start_str: str,
-        end_str: str,
-    ):
-        if not await _ensure_command_channel(interaction):
-            return
-
-        try:
-            start = datetime.strptime(start_str, "%d-%m-%Y").date()
-            end = datetime.strptime(end_str, "%d-%m-%Y").date()
-        except Exception:
-            await interaction.response.send_message(
-                "❌ Use format: `DD-MM-YYYY` for both dates.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer(thinking=True)
-
-        raw = await build_camp_raw_log(interaction.client, start, end)
-        guild = interaction.guild
-        id_to_name = _build_id_to_name(guild)
-        donations, supplies, ledger, deliveries = parse_log(raw)
-
-        delivery_table = build_delivery_table(deliveries, id_to_name)
-        await _send_sections_interaction(
-            interaction, [delivery_table], already_responded=True
+        sections = build_markdown_sections(
+            donations, supplies, deliveries, ledger, id_to_name
         )
+
+        # Donations is section index 0
+        await _send_sections_interaction(interaction, [sections[0]])
+
+    # ---------------------------------------------------------
+    # /camp_supplies
+    # ---------------------------------------------------------
+    @bot.tree.command(
+        name="camp_supplies",
+        description="Show only Supply Mission Summary.",
+    )
+    @app_commands.describe(
+        start_str="Start date (DD-MM-YYYY)",
+        end_str="End date (DD-MM-YYYY)",
+    )
+    async def camp_supplies_slash(
+        interaction: discord.Interaction,
+        start_str: str,
+        end_str: str,
+    ):
+        if not await _ensure_command_channel(interaction):
+            return
+
+        try:
+            start = datetime.strptime(start_str, "%d-%m-%Y").date()
+            end = datetime.strptime(end_str, "%d-%m-%Y").date()
+        except:
+            await interaction.response.send_message(
+                "❌ Format: DD-MM-YYYY",
+                ephemeral=True,
+            )
+            return
+
+        raw = await build_camp_raw_log(interaction.client, start, end)
+
+        donations, supplies, deliveries, ledger = parse_log(raw)
+        guild = interaction.guild
+        id_to_name = _build_id_to_name(guild)
+
+        sections = build_markdown_sections(
+            donations, supplies, deliveries, ledger, id_to_name
+        )
+
+        # Supplies is now section index 1
+        await _send_sections_interaction(interaction, [sections[1]])
+
+    # ---------------------------------------------------------
+    # /camp_deliveries
+    # ---------------------------------------------------------
+    @bot.tree.command(
+        name="camp_deliveries",
+        description="Show only Delivery Mission Summary (Stock Sales).",
+    )
+    @app_commands.describe(
+        start_str="Start date (DD-MM-YYYY)",
+        end_str="End date (DD-MM-YYYY)",
+    )
+    async def camp_deliveries_slash(
+        interaction: discord.Interaction,
+        start_str: str,
+        end_str: str,
+    ):
+        if not await _ensure_command_channel(interaction):
+            return
+
+        try:
+            start = datetime.strptime(start_str, "%d-%m-%Y").date()
+            end = datetime.strptime(end_str, "%d-%m-%Y").date()
+        except:
+            await interaction.response.send_message(
+                "❌ Format must be DD-MM-YYYY",
+                ephemeral=True,
+            )
+            return
+
+        raw = await build_camp_raw_log(interaction.client, start, end)
+
+        donations, supplies, deliveries, ledger = parse_log(raw)
+        guild = interaction.guild
+        id_to_name = _build_id_to_name(guild)
+
+        sections = build_markdown_sections(
+            donations, supplies, deliveries, ledger, id_to_name
+        )
+
+        # Deliveries is now section index 2
+        await _send_sections_interaction(interaction, [sections[2]])
+
+    # ---------------------------------------------------------
+    # /camp_ledger
+    # ---------------------------------------------------------
+    @bot.tree.command(
+        name="camp_ledger",
+        description="Show only Ledger Transactions.",
+    )
+    @app_commands.describe(
+        start_str="Start date (DD-MM-YYYY)",
+        end_str="End date (DD-MM-YYYY)",
+    )
+    async def camp_ledger_slash(
+        interaction: discord.Interaction,
+        start_str: str,
+        end_str: str,
+    ):
+        if not await _ensure_command_channel(interaction):
+            return
+
+        try:
+            start = datetime.strptime(start_str, "%d-%m-%Y").date()
+            end = datetime.strptime(end_str, "%d-%m-%Y").date()
+        except:
+            await interaction.response.send_message(
+                "❌ Date must be DD-MM-YYYY",
+                ephemeral=True,
+            )
+            return
+
+        raw = await build_camp_raw_log(interaction.client, start, end)
+
+        donations, supplies, deliveries, ledger = parse_log(raw)
+        guild = interaction.guild
+        id_to_name = _build_id_to_name(guild)
+
+        sections = build_markdown_sections(
+            donations, supplies, deliveries, ledger, id_to_name
+        )
+
+        # Ledger is now section index 3
+        await _send_sections_interaction(interaction, [sections[3]])
