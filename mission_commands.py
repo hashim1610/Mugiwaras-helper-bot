@@ -83,12 +83,8 @@ class MissionCommands(commands.Cog):
         participants: str
     ):
         text = self.build_mission_block("SUPPLY MISSION", participants)
-        await interaction.channel.send(text)
-
-        await interaction.response.send_message(
-            "📦 Logged SUPPLY MISSION.",
-            ephemeral=True
-        )
+        # 👇 Single public message, no ephemeral reply, no thread
+        await interaction.response.send_message(text)
 
     # ----------------------------------------------------------
     # /mission delivery
@@ -107,12 +103,8 @@ class MissionCommands(commands.Cog):
         participants: str
     ):
         text = self.build_mission_block("DELIVERY MISSION", participants)
-        await interaction.channel.send(text)
-
-        await interaction.response.send_message(
-            "🚚 Logged DELIVERY MISSION.",
-            ephemeral=True
-        )
+        # 👇 Single public message
+        await interaction.response.send_message(text)
 
     # ----------------------------------------------------------
     # /mission_legacy supply
@@ -134,13 +126,8 @@ class MissionCommands(commands.Cog):
     ):
         mission_text = self.build_mission_block("SUPPLY MISSION", participants)
         full_text = f"{date_text}\n{mission_text}"
-
-        await interaction.channel.send(full_text)
-
-        await interaction.response.send_message(
-            f"📦 Backfilled SUPPLY MISSION for {date_text}.",
-            ephemeral=True
-        )
+        # 👇 Everyone sees the backfilled entry
+        await interaction.response.send_message(full_text)
 
     # ----------------------------------------------------------
     # /mission_legacy delivery
@@ -162,13 +149,8 @@ class MissionCommands(commands.Cog):
     ):
         mission_text = self.build_mission_block("DELIVERY MISSION", participants)
         full_text = f"{date_text}\n{mission_text}"
-
-        await interaction.channel.send(full_text)
-
-        await interaction.response.send_message(
-            f"🚚 Backfilled DELIVERY MISSION for {date_text}.",
-            ephemeral=True
-        )
+        # 👇 Everyone sees the backfilled entry
+        await interaction.response.send_message(full_text)
 
 
 # --------------------------------------------------------------
